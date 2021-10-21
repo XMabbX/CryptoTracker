@@ -57,6 +57,9 @@ class BinanceCSVReader:
         value = Decimal(row['Change'])
         transaction_type = cls._get_transaction_type(row['Operation'], value)
         coin = row['Coin']
+        # TODO add list of execptions
+        if coin == 'LDFTM':
+            coin = 'FTM'
         account = row['Account']
 
         return ProtoTransaction(value, coin, transaction_type, utc_time, account)

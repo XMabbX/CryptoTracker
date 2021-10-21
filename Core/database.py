@@ -1,14 +1,67 @@
 from typing import Dict, List
+from decimal import Decimal
+from datetime import datetime
+from dataclasses import dataclass, field
 
 from .Dataclasses import Coin, Transaction
-from .CoinAPIExternal import CoinAPI
+from .CoinAPIExternal import CoinAPI, APIBase
 from .Dataclasses import ProtoTransaction
+
+IN_STOCK_OPERATIONS = (Transaction.TransactionType.SAVING_REDEMPTION,
+                       Transaction.TransactionType.SAVING_INTEREST,
+                       Transaction.TransactionType.POS_REDEMPTION,
+                       Transaction.TransactionType.POS_INTEREST,
+                       Transaction.TransactionType.BUY,
+                       Transaction.TransactionType.DEPOSIT,
+                       Transaction.TransactionType.FEE,
+                       Transaction.TransactionType.SELL,
+                       Transaction.TransactionType.SAVING_PURCHASE,
+                       Transaction.TransactionType.POS_PURCHASE)
+
+IN_EARN_OPERATIONS = (Transaction.TransactionType.SAVING_PURCHASE, Transaction.TransactionType.POS_PURCHASE,
+                      Transaction.TransactionType.SAVING_REDEMPTION, Transaction.TransactionType.POS_REDEMPTION)
 
 
 class CoinData:
 
-    def __init__(self, coin):
-        self._coin = coin
+    def __init__(self, coin: Coin):
+        self.coin = coin
+        self.stock = Decimal(0)
+        self.earn = Decimal(0)
+        self._average_cost = None
+        self._transactions = None
+
+        self._collect_stock_value()
+        self._collect_earn_value()
+
+    def _collect_stock_value(self):
+        for trans in self.coin.transactions:
+            if trans.operation_type in IN_STOCK_OPERATIONS:
+                self.stock += trans.value
+            else:
+                raise ValueError(f"Transaction operation {trans.operation_type} not listed")
+
+    def _collect_earn_value(self):
+        for trans in self.coin.transactions:
+            if trans.operation_type in IN_EARN_OPERATIONS:
+                self.earn -= trans.value
+
+
+@dataclass
+class TransactionData:
+    # TODO save cost per unit
+    # TODO save current value per unit
+    transaction: Transaction
+    cost: Decimal
+    current_value: Decimal
+    change: float = field(init=False)
+    change_value: Decimal = field(init=False)
+    change_percentage: str = field(init=False)
+
+    def __post_init__(self):
+        self.change_value = self.current_value - self.cost
+        self.change = float(self.change_value / self.cost)
+        self.change_percentage = "{0:.2%}".format(self.change)
 
 
 class DataBase:
@@ -19,11 +72,13 @@ class DataBase:
 
 class DataBaseAPI:
 
-    def __init__(self, database=None):
+    def __init__(self, external_api: APIBase, database=None, return_fiat='EUR'):
         if database is None or not isinstance(database, DataBase):
             raise ValueError("A database must exist")
         self._database = database
+        self._external_api = external_api
         self._duplicate_ids = set()
+        self._return_fiat = return_fiat
 
     @staticmethod
     def create_new_database(name='default'):
@@ -32,6 +87,11 @@ class DataBaseAPI:
         db.holding = {}
         db.transactions = {}
         return db
+
+    def printStatus(self):
+        for coin_tick, coin in self._database.holding.items():
+            coin_data = CoinData(coin)
+            print(f"Coin: {coin.coin_info.tick}. Current stock: {coin_data.stock}. Current earn: {coin_data.earn}")
 
     def acknowledge_duplicates(self, path):
         with open(path, 'r') as f:
@@ -138,3 +198,19 @@ class DataBaseAPI:
 
         coin.transactions.append(transaction)
         self._database.transactions[transaction.id] = transaction
+
+    def _get_now_time(self) -> datetime:
+        now_full = datetime.now()
+        return datetime(now_full.year, now_full.month, now_full.day, now_full.hour, now_full.minute)
+
+    def process_transactions_data(self, transactions: List[Transaction]):
+        transaction_data = []
+        for trans in transactions:
+            cost = trans.value * self._external_api.get_conversion_rate(trans.coin.coin_info.tick, self._return_fiat,
+                                                                        trans.UTC_Time)
+            current_value = trans.value * self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
+                                                                                 self._return_fiat,
+                                                                                 self._get_now_time())
+            new_data = TransactionData(trans, cost, current_value)
+            transaction_data.append(new_data)
+        return transaction_data

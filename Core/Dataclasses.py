@@ -68,4 +68,4 @@ def _generateId(transaction: Transaction):
 @dataclass
 class Coin:
     coin_info: CoinInfo
-    transactions: List[Transaction]
+    transactions: List[Transaction] = field(repr=False)
