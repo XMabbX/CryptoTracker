@@ -64,21 +64,43 @@ class TransactionData:
         self.change_percentage = "{0:.2%}".format(self.change)
 
 
+@dataclass
+class CoinEarn:
+    coin: Coin
+    quantity: Decimal
+    current_value: Decimal = field(init=False)
+    current_conversion_rate: Decimal = field(init=False)
+
+    def compute_current_value(self, conversion_rate):
+        self.current_conversion_rate = conversion_rate
+        self.current_value = self.current_conversion_rate * self.quantity
+
+
 class DataBase:
     name: str
     holding: Dict[str, Coin]
     transactions: Dict[str, Transaction]
 
 
-class DataBaseAPI:
+class NowPrecision:
+    M1 = '1Minute'
+    M15 = '15Minute'
+    M30 = '30Minute'
+    H1 = '1Hour'
 
-    def __init__(self, external_api: APIBase, database=None, return_fiat='EUR'):
+
+class DataBaseAPI:
+    NowPrecision = NowPrecision
+
+    def __init__(self, external_api: APIBase, database=None, return_fiat='EUR',
+                 now_precission: NowPrecision = NowPrecision.M15):
         if database is None or not isinstance(database, DataBase):
             raise ValueError("A database must exist")
         self._database = database
         self._external_api = external_api
         self._duplicate_ids = set()
         self._return_fiat = return_fiat
+        self._now_precision = now_precission
 
     @staticmethod
     def create_new_database(name='default'):
@@ -201,7 +223,16 @@ class DataBaseAPI:
 
     def _get_now_time(self) -> datetime:
         now_full = datetime.now()
-        return datetime(now_full.year, now_full.month, now_full.day, now_full.hour, now_full.minute)
+        if self._now_precision == NowPrecision.H1:
+            return datetime(now_full.year, now_full.month, now_full.day, now_full.hour)
+        elif self._now_precision == NowPrecision.M30:
+            minutes = 30 if now_full.minute >= 30 else 0
+            return datetime(now_full.year, now_full.month, now_full.day, now_full.hour, minutes)
+        elif self._now_precision == NowPrecision.M15:
+            minutes = int(now_full.minute / 15) * 15
+            return datetime(now_full.year, now_full.month, now_full.day, now_full.hour, minutes)
+        elif self._now_precision == NowPrecision.M1:
+            return datetime(now_full.year, now_full.month, now_full.day, now_full.hour, now_full.minute)
 
     def process_transactions_data(self, transactions: List[Transaction]):
         transaction_data = []
@@ -214,3 +245,19 @@ class DataBaseAPI:
             new_data = TransactionData(trans, cost, current_value)
             transaction_data.append(new_data)
         return transaction_data
+
+    def collect_all_earn_earnings(self, transactions: List[Transaction]) -> Dict[str, CoinEarn]:
+        coin_dict = {}
+        for trans in transactions:
+            if trans.operation_type in (trans.TransactionType.POS_INTEREST, trans.TransactionType.SAVING_INTEREST):
+                coin_tick = trans.coin.coin_info.tick
+                if coin_tick in coin_dict:
+                    coin_dict[coin_tick].quantity += trans.value
+                else:
+                    coin_dict[coin_tick] = CoinEarn(coin=trans.coin, quantity=trans.value)
+
+        for coin_tick, coin in coin_dict.items():
+            conversion_rate = self._external_api.get_conversion_rate(coin_tick, self._return_fiat, self._get_now_time())
+            coin.compute_current_value(conversion_rate)
+
+        return coin_dict
