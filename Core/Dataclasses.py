@@ -40,7 +40,7 @@ class ProtoTransaction:
 class Transaction:
     TransactionType = TransactionType
 
-    value: Decimal
+    quantity: Decimal
     coin: 'Coin'
     operation_type: TransactionType
     UTC_Time: datetime
@@ -62,7 +62,7 @@ def _generateId(transaction: Transaction):
     time = str(hex(int(transaction.UTC_Time.strftime('%Y%m%d%H%M%S%f'))))
     operation_type = hex(transaction.operation_type.value)
     coin_tick = transaction.coin.coin_info.tick
-    return time + '_' + str(operation_type) + '_' + coin_tick + '_' + str(transaction.value).replace('.', '_').replace('-', '')
+    return time + '_' + str(operation_type) + '_' + coin_tick + '_' + str(transaction.quantity).replace('.', '_').replace('-', '')
 
 
 @dataclass
