@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional, Iterable
 from decimal import Decimal
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -27,59 +27,58 @@ class CoinData:
     def __init__(self, coin: Coin):
         self.coin = coin
 
-        self._current_conversion_rate = None
-        self._current_last_update_conversion_rate = None
-
         self._stock_quantity = None
         self._earn_quantity = None
-        self._transactions_list_data = None
 
-        self._buy_transactions = []
+        self.current_value_per_unit = None
 
-        self._transactions_groups = self._group_transactions()
-        self._fees_transactions = []
+        self._transactions_groups: Dict[Transaction.TransactionType, List[Transaction]] = self._group_transactions()
+        self._fees_transactions: List[FeeData] = []
+        self._buy_transactions_data: List[TransactionData] = []
+        self._coin_earn = None
 
     def _group_transactions(self):
         transactions_groups = {x: [] for x in Transaction.TransactionType}
 
         for trans in self.coin.transactions:
-            self._transactions_groups[trans.operation_type].append(trans)
+            transactions_groups[trans.operation_type].append(trans)
         return transactions_groups
 
-    @property
-    def stock_quantity(self):
-        if self._stock_quantity is None:
-            self._stock_quantity = self._get_spot_current_quantity()
-        return self._stock_quantity
+    def get_transactions(self, type_filter: Optional[Iterable[Transaction.TransactionType]] = None):
+        if type_filter is None:
+            return self.coin.transactions
+        else:
+            trans_list = []
+            for current_type in type_filter:
+                trans_list.extend(self._transactions_groups[current_type])
+            return trans_list
 
-    def _get_spot_current_quantity(self):
-        value = Decimal(0)
-        for trans in self.coin.transactions:
-            value += trans.quantity
-        return value
+    def update_current_value(self, value):
+        self.current_value_per_unit = value
 
-    @property
-    def earn_quantity(self):
-        if self._earn_quantity is None:
-            self._earn_quantity = self._get_earn_current_quantity()
-        return self._earn_quantity
-
-    def _get_earn_current_quantity(self):
-        value = Decimal(0)
-        for trans in self.coin.transactions:
-            if trans.operation_type in IN_EARN_OPERATIONS:
-                value -= trans.quantity
-        return value
-
-    def collect_fees(self):
-        list_trans = []
-        for trans in self._transactions_groups[Transaction.TransactionType.FEE]:
-            list_trans.append(FeeData(trans, ))
+    def print_status(self):
+        print(f"Coin info: {self.coin}")
+        if self.current_value_per_unit:
+            print(f"Current quantity in stock: {self._stock_quantity}; "
+                  f"Current value: {self._stock_quantity * self.current_value_per_unit}")
+            print(f"Current quantity in earn: {self._earn_quantity}; "
+                  f"Current value: {self._earn_quantity * self.current_value_per_unit}")
+        else:
+            print(f"Current quantity in stock: {self._stock_quantity}; Current value: Not available")
+            print(f"Current quantity in earn: {self._earn_quantity}; Current value: Not available")
+        total_cost_of_fees = Decimal(0)
+        for fee in self._fees_transactions:
+            total_cost_of_fees += fee.cost
+        print(f"Total quantity spent in fees: {total_cost_of_fees}€")
+        print(f"Total value earn:")
+        print(f"{self._coin_earn}")
+        print(f"Buy transactions cost and gains")
+        for buy_trans in self._buy_transactions_data:
+            print(buy_trans)
 
 
 @dataclass
 class TransactionData:
-
     transaction: Transaction
     cost_per_unit: Decimal
     current_value_per_unit: Decimal
@@ -98,9 +97,10 @@ class TransactionData:
         self.change_percentage = "{0:.2%}".format(self.change)
 
 
+
+
 @dataclass
 class FeeData:
-
     transaction: Transaction
     cost_per_unit: Decimal
 
@@ -112,7 +112,6 @@ class FeeData:
 
 @dataclass
 class CoinEarn:
-
     coin: Coin
     quantity: Decimal
 
@@ -127,6 +126,7 @@ class CoinEarn:
 class DataBase:
     name: str
     holdings: Dict[str, Coin]
+    holdings_data: Dict[str, CoinData]
     transactions: Dict[str, Transaction]
 
 
@@ -150,18 +150,24 @@ class DataBaseAPI:
         self._return_fiat = return_fiat
         self._now_precision = now_precission
 
+        self.active_processes = (self._compute_current_value_per_coin,
+                                 self._compute_spot_quantities,
+                                 self._compute_earn_quantities,
+                                 self._compute_fees_quantities,
+                                 self._compute_buy_transactions,
+                                 self._compute_earnings)
+
     @staticmethod
     def create_new_database(name='default'):
         db = DataBase()
         db.name = name
         db.holdings = {}
         db.transactions = {}
+        db.holdings_data = {}
         return db
 
-    def printStatus(self):
-        for coin_tick, coin in self._database.holdings.items():
-            coin_data = CoinData(coin)
-            print(f"Coin: {coin.coin_info.tick}. Current stock: {coin_data.stock_quantity}. Current earn: {coin_data.earn_quantity}")
+    def print_coin_data(self, coin_tick):
+        self._get_coin_data(coin_tick).print_status()
 
     def acknowledge_duplicates(self, path):
         with open(path, 'r') as f:
@@ -196,9 +202,16 @@ class DataBaseAPI:
                 del self._database.transactions[transaction.id]
 
         del self._database.holdings[coin_name]
+        try:
+            del self._database.holdings_data[coin_name]
+        except KeyError:
+            pass
 
     def get_coin(self, coin_name: str) -> Coin:
         return self._database.holdings[coin_name]
+
+    def _get_coin_data(self, coin_name: str) -> CoinData:
+        return self._database.holdings_data[coin_name]
 
     def validate_import(self, list_transactions: List[ProtoTransaction]):
         print("Validating transactions...")
@@ -219,9 +232,6 @@ class DataBaseAPI:
 
             if not self._validate_transaction(transaction):
                 raise ValueError(f"Transaction {transaction} not valid, it is duplicated in the database")
-
-        # if len(list_transactions) == len(set(x.id for x in list_transactions)):
-        #     pass
 
         for transaction in list_transactions:
 
@@ -247,7 +257,12 @@ class DataBaseAPI:
         except KeyError:
             coin = self.add_coin(proto.coin_name)
 
-        return Transaction(proto.value, coin, proto.operation_type, proto.UTC_Time, proto.account)
+        if proto.operation_type is Transaction.TransactionType.BUY and proto.value < 0:
+            operation_type = Transaction.TransactionType.SELL
+        else:
+            operation_type = proto.operation_type
+
+        return Transaction(proto.value, coin, operation_type, proto.UTC_Time, proto.account)
 
     def _validate_transaction(self, transaction: Transaction) -> bool:
         if transaction.id in self._database.transactions:
@@ -282,7 +297,7 @@ class DataBaseAPI:
         elif self._now_precision == NowPrecision.M1:
             return datetime(now_full.year, now_full.month, now_full.day, now_full.hour, now_full.minute)
 
-    def process_transactions_data(self, transactions: List[Transaction]):
+    def _process_transactions_data(self, transactions: List[Transaction]):
         transaction_data = []
         for trans in transactions:
             cost = self._external_api.get_conversion_rate(trans.coin.coin_info.tick, self._return_fiat, trans.UTC_Time)
@@ -310,3 +325,63 @@ class DataBaseAPI:
             coin.compute_current_value(conversion_rate)
 
         return coin_dict
+
+    def process_coin_data(self, coin_tick: Optional[str] = None):
+        if coin_tick is None:
+            for coin_tick in self._database.holdings_data.keys():
+                self.process_coin_data(coin_tick)
+        else:
+            try:
+                coin_data = self._get_coin_data(coin_tick)
+            except KeyError:
+                coin_data = CoinData(self.get_coin(coin_tick))
+                self._database.holdings_data[coin_tick] = coin_data
+            for process in self.active_processes:
+                process(coin_data)
+
+    def _compute_current_value_per_coin(self, coin_data: CoinData):
+        coin_data.update_current_value(self._external_api.get_conversion_rate(coin_data.coin.coin_info.tick,
+                                                                              self._return_fiat,
+                                                                              self._get_now_time()))
+
+    def _compute_spot_quantities(self, coin_data: CoinData):
+        value = Decimal(0)
+        for trans in coin_data.coin.transactions:
+            value += trans.quantity
+        coin_data._stock_quantity = value
+
+    def _compute_earn_quantities(self, coin_data: CoinData):
+        value = Decimal(0)
+        for trans in coin_data.coin.transactions:
+            if trans.operation_type in IN_EARN_OPERATIONS:
+                value -= trans.quantity
+        coin_data._earn_quantity = value
+
+    def _compute_fees_quantities(self, coin_data: CoinData):
+        list_trans = []
+        for trans in coin_data.get_transactions((Transaction.TransactionType.FEE,)):
+            cost_per_unit = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
+                                                                   self._return_fiat,
+                                                                   trans.UTC_Time)
+
+            list_trans.append(FeeData(trans, cost_per_unit))
+
+        coin_data._fees_transactions = list_trans
+
+    def _compute_buy_transactions(self, coin_data: CoinData):
+        list_trans_to_process = coin_data.get_transactions((Transaction.TransactionType.BUY,))
+        data_processed = self._process_transactions_data(list_trans_to_process)
+        coin_data._buy_transactions_data = data_processed
+
+    def _compute_earnings(self, coin_data: CoinData):
+        list_trans_to_process = coin_data.get_transactions((Transaction.TransactionType.POS_INTEREST,
+                                                            Transaction.TransactionType.SAVING_INTEREST))
+        coin_earn = CoinEarn(coin_data.coin, Decimal(0))
+        for trans in list_trans_to_process:
+            coin_earn.quantity += trans.quantity
+
+        conversion_rate = self._external_api.get_conversion_rate(coin_data.coin.coin_info.tick,
+                                                                 self._return_fiat,
+                                                                 self._get_now_time())
+        coin_earn.compute_current_value(conversion_rate)
+        coin_data._coin_earn = coin_earn
