@@ -7,19 +7,30 @@ from .Dataclasses import Coin, Transaction
 from .CoinAPIExternal import CoinAPI, APIBase
 from .Dataclasses import ProtoTransaction
 
-IN_STOCK_OPERATIONS = (Transaction.TransactionType.SAVING_REDEMPTION,
-                       Transaction.TransactionType.SAVING_INTEREST,
-                       Transaction.TransactionType.POS_REDEMPTION,
-                       Transaction.TransactionType.POS_INTEREST,
-                       Transaction.TransactionType.BUY,
-                       Transaction.TransactionType.DEPOSIT,
-                       Transaction.TransactionType.FEE,
+SPOT_OPERATIONS = (Transaction.TransactionType.SAVING_REDEMPTION,
+                   Transaction.TransactionType.SAVING_INTEREST,
+                   Transaction.TransactionType.POS_REDEMPTION,
+                   Transaction.TransactionType.POS_INTEREST,
+                   Transaction.TransactionType.BUY,
+                   Transaction.TransactionType.DEPOSIT,
+                   Transaction.TransactionType.FEE,
+                   Transaction.TransactionType.SELL,
+                   Transaction.TransactionType.SAVING_PURCHASE,
+                   Transaction.TransactionType.POS_PURCHASE)
+
+IN_SPOT_OPERATIONS = (Transaction.TransactionType.SAVING_REDEMPTION,
+                      Transaction.TransactionType.SAVING_INTEREST,
+                      Transaction.TransactionType.POS_REDEMPTION,
+                      Transaction.TransactionType.POS_INTEREST,
+                      Transaction.TransactionType.BUY,
+                      Transaction.TransactionType.DEPOSIT)
+OUT_SPOT_OPERATIONS = (Transaction.TransactionType.FEE,
                        Transaction.TransactionType.SELL,
                        Transaction.TransactionType.SAVING_PURCHASE,
                        Transaction.TransactionType.POS_PURCHASE)
 
-IN_EARN_OPERATIONS = (Transaction.TransactionType.SAVING_PURCHASE, Transaction.TransactionType.POS_PURCHASE,
-                      Transaction.TransactionType.SAVING_REDEMPTION, Transaction.TransactionType.POS_REDEMPTION)
+EARN_OPERATIONS = (Transaction.TransactionType.SAVING_PURCHASE, Transaction.TransactionType.POS_PURCHASE,
+                   Transaction.TransactionType.SAVING_REDEMPTION, Transaction.TransactionType.POS_REDEMPTION)
 
 
 class CoinData:
@@ -27,7 +38,7 @@ class CoinData:
     def __init__(self, coin: Coin):
         self.coin = coin
 
-        self._stock_quantity = None
+        self._spot_quantity = None
         self._earn_quantity = None
 
         self.current_value_per_unit = None
@@ -35,7 +46,7 @@ class CoinData:
         self._transactions_groups: Dict[Transaction.TransactionType, List[Transaction]] = self._group_transactions()
         self._fees_transactions: List[FeeData] = []
         self._buy_transactions_data: List[BuyTransactionData] = []
-        self._coin_earn = None
+        self._coin_earn: Optional[CoinEarn] = None
 
         self.current_average_cost = Decimal(0)
 
@@ -72,12 +83,12 @@ class CoinData:
     def print_status(self):
         print(f"Coin info: {self.coin}")
         if self.current_value_per_unit:
-            print(f"Current quantity in stock: {self._stock_quantity}; "
-                  f"Current value: {self._stock_quantity * self.current_value_per_unit}")
+            print(f"Current quantity in stock: {self._spot_quantity}; "
+                  f"Current value: {self._spot_quantity * self.current_value_per_unit}")
             print(f"Current quantity in earn: {self._earn_quantity}; "
                   f"Current value: {self._earn_quantity * self.current_value_per_unit}")
         else:
-            print(f"Current quantity in stock: {self._stock_quantity}; Current value: Not available")
+            print(f"Current quantity in stock: {self._spot_quantity}; Current value: Not available")
             print(f"Current quantity in earn: {self._earn_quantity}; Current value: Not available")
         total_cost_of_fees = Decimal(0)
         for fee in self._fees_transactions:
@@ -218,7 +229,7 @@ class DataBaseAPI:
         return db
 
     def print_coin_data(self, coin_tick):
-        self._get_coin_data(coin_tick).print_status()
+        self.get_coin_data(coin_tick).print_status()
 
     def acknowledge_duplicates(self, path):
         with open(path, 'r') as f:
@@ -261,14 +272,19 @@ class DataBaseAPI:
     def get_coin(self, coin_name: str) -> Coin:
         return self._database.holdings[coin_name]
 
-    def _get_coin_data(self, coin_name: str) -> CoinData:
+    def get_coin_data(self, coin_name: str) -> CoinData:
         return self._database.holdings_data[coin_name]
 
     def validate_import(self, list_transactions: List[ProtoTransaction]):
-        print("Validating transactions...")
+        # print("Validating transactions...")
         new_transactions = []
         for proto_transaction in list_transactions:
             transaction = self._convert_transaction(proto_transaction)
+            if transaction.operation_type in IN_SPOT_OPERATIONS:
+                assert transaction.quantity >= 0, "Enter operations must be positive"
+
+            if transaction.operation_type in OUT_SPOT_OPERATIONS:
+                assert transaction.quantity <= 0, "Exit operations must be negative"
             new_transactions.append(transaction)
 
         return self._validate_duplicates(new_transactions)
@@ -383,7 +399,7 @@ class DataBaseAPI:
                 self.process_coin_data(coin_tick)
         else:
             try:
-                coin_data = self._get_coin_data(coin_tick)
+                coin_data = self.get_coin_data(coin_tick)
             except KeyError:
                 coin_data = CoinData(self.get_coin(coin_tick))
                 self._database.holdings_data[coin_tick] = coin_data
@@ -399,12 +415,12 @@ class DataBaseAPI:
         value = Decimal(0)
         for trans in coin_data.coin.transactions:
             value += trans.quantity
-        coin_data._stock_quantity = value
+        coin_data._spot_quantity = value
 
     def _compute_earn_quantities(self, coin_data: CoinData):
         value = Decimal(0)
         for trans in coin_data.coin.transactions:
-            if trans.operation_type in IN_EARN_OPERATIONS:
+            if trans.operation_type in EARN_OPERATIONS:
                 value -= trans.quantity
         coin_data._earn_quantity = value
 
