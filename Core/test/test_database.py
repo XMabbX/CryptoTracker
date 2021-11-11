@@ -469,4 +469,72 @@ class TestDataBaseAPI(TestCase):
         self.assertAlmostEqual(float(coin_data.current_average_cost), 13.8461538)
 
     def test_coin_data_gains_multiple_buy_single_sell_bigger(self):
-        pass
+        time_start = datetime.now() - timedelta(days=10)
+        time_1 = time_start + timedelta(days=1)
+        time_2 = time_start + timedelta(days=2)
+        self.external_api.add_fake_cache_data('BTCEUR', time_start, Decimal(10))
+        self.external_api.add_fake_cache_data('BTCEUR', time_1, Decimal(20))
+        self.external_api.add_fake_cache_data('BTCEUR', time_2, Decimal(30))
+        self.external_api.add_fake_cache_data('BTCEUR', datetime.now(), Decimal(50))
+
+        proto_list = [self._create_BTC_buy_proto(Decimal(10), time_start),
+                      self._create_BTC_buy_proto(Decimal(5), time_1),
+                      self._create_BTC_sell_proto(Decimal(-12), time_2)]
+
+        valid_transactions = self.api.validate_import(proto_list)
+        self.api.add_transaction(valid_transactions)
+        self.api.active_processes = [self.api._compute_gains]
+        self.api.process_coin_data('BTC')
+
+        coin_data = self.api.get_coin_data('BTC')
+
+        assert len(coin_data._buy_transactions_data) == 2
+        buy_transaction = coin_data._buy_transactions_data[0]
+        assert buy_transaction.get_spot_quantity() == Decimal(0)
+        assert buy_transaction.get_current_cost() == Decimal(0)
+        assert buy_transaction.cost == Decimal(100)
+        assert buy_transaction.cost_per_unit == Decimal(10)
+        assert buy_transaction.current_value_per_unit == Decimal(50)
+        assert buy_transaction.current_value == Decimal(500)
+        assert buy_transaction.change_value == Decimal(400)
+        assert buy_transaction.change_percentage == Decimal(4)
+        assert buy_transaction.change_percentage_string == "400.00%"
+
+        assert len(buy_transaction.amortized_quantities) == 1
+        amortized = buy_transaction.amortized_quantities[0]
+        assert amortized[0] == Decimal(10)
+        assert amortized[1] == Decimal(300)
+        assert buy_transaction.total_amortized == Decimal(10)
+        assert buy_transaction.total_amortized_value == Decimal(300)
+        assert buy_transaction.unrealized_gains == Decimal(0)
+        assert buy_transaction.unrealized_gains_change_percentage == 0.0
+        assert buy_transaction.unrealized_gains_change_percentage_string == "0.00%"
+        assert buy_transaction.realized_gains == Decimal(200)
+        self.assertAlmostEqual(buy_transaction.realized_gains_change_percentage, 3.0)
+        assert buy_transaction.realized_gains_change_percentage_string == "300.00%"
+
+        buy_transaction = coin_data._buy_transactions_data[1]
+        assert buy_transaction.get_spot_quantity() == Decimal(3)
+        assert buy_transaction.get_current_cost() == Decimal(60)
+        assert buy_transaction.cost == Decimal(100)
+        assert buy_transaction.cost_per_unit == Decimal(20)
+        assert buy_transaction.current_value_per_unit == Decimal(50)
+        assert buy_transaction.current_value == Decimal(250)
+        assert buy_transaction.change_value == Decimal(150)
+        assert buy_transaction.change_percentage == Decimal(1.5)
+        assert buy_transaction.change_percentage_string == "150.00%"
+
+        assert len(buy_transaction.amortized_quantities) == 1
+        amortized = buy_transaction.amortized_quantities[0]
+        assert amortized[0] == Decimal(2)
+        assert amortized[1] == Decimal(60)
+        assert buy_transaction.total_amortized == Decimal(2)
+        assert buy_transaction.total_amortized_value == Decimal(60)
+        assert buy_transaction.unrealized_gains == Decimal(90)
+        assert buy_transaction.unrealized_gains_change_percentage == 1.5
+        assert buy_transaction.unrealized_gains_change_percentage_string == "150.00%"
+        assert buy_transaction.realized_gains == Decimal(20)
+        self.assertAlmostEqual(buy_transaction.realized_gains_change_percentage, 1.5)
+        assert buy_transaction.realized_gains_change_percentage_string == "150.00%"
+
+        self.assertAlmostEqual(float(coin_data.current_average_cost), 20)

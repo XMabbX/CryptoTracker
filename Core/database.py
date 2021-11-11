@@ -528,7 +528,7 @@ class DataBaseAPI:
                             buy_trans.add_amortized(sell_quantity, sell_value * sell_quantity)
                             break
                         else:
-                            amortized_quantity = sell_quantity - current_quantity
+                            amortized_quantity = current_quantity
                             sell_value = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
                                                                                 self._return_fiat,
                                                                                 trans.UTC_Time)
