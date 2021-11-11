@@ -114,16 +114,16 @@ class TransactionData:
 
     cost: Decimal = field(init=False)
     current_value: Decimal = field(init=False)
-    change: float = field(init=False)
+    change_percentage: float = field(init=False)
     change_value: Decimal = field(init=False)
-    change_percentage: str = field(init=False)
+    change_percentage_string: str = field(init=False)
 
     def __post_init__(self):
         self.cost = self.transaction.quantity * self.cost_per_unit
         self.current_value = self.transaction.quantity * self.current_value_per_unit
         self.change_value = self.current_value - self.cost
-        self.change = float(self.change_value / self.cost)
-        self.change_percentage = "{0:.2%}".format(self.change)
+        self.change_percentage = float(self.change_value / self.cost)
+        self.change_percentage_string = "{0:.2%}".format(self.change_percentage)
 
 
 @dataclass
@@ -143,6 +143,25 @@ class BuyTransactionData(TransactionData):
         return self.get_spot_quantity() * self.cost_per_unit
 
     @property
+    def total_amortized(self):
+        if not self.amortized_quantities:
+            return Decimal(0)
+        return sum(x[0] for x in self.amortized_quantities)
+
+    @property
+    def total_amortized_value(self):
+        if not self.amortized_quantities:
+            return Decimal(0)
+        return sum(x[1] for x in self.amortized_quantities)
+
+    @property
+    def unrealized_total_value(self):
+        current_quantity = self.get_spot_quantity()
+        if not current_quantity > 0:
+            return Decimal(0)
+        return current_quantity * self.current_value_per_unit
+
+    @property
     def unrealized_gains(self):
         current_quantity = self.get_spot_quantity()
         if not current_quantity > 0:
@@ -151,11 +170,33 @@ class BuyTransactionData(TransactionData):
         return (current_quantity * self.current_value_per_unit) - (current_quantity * self.cost_per_unit)
 
     @property
+    def unrealized_gains_change_percentage(self):
+        current_quantity = self.get_spot_quantity()
+        if not current_quantity > 0:
+            return 0.0
+
+        return float(self.unrealized_gains/(current_quantity * self.cost_per_unit))
+
+    @property
+    def unrealized_gains_change_percentage_string(self):
+        return "{0:.2%}".format(self.unrealized_gains_change_percentage)
+
+    @property
     def realized_gains(self):
         if not self.amortized_quantities:
             return Decimal(0)
-        total_amortized = sum(x[0] for x in self.amortized_quantities)
-        return sum(x[1] for x in self.amortized_quantities) - (total_amortized * self.cost_per_unit)
+        return self.total_amortized_value - (self.total_amortized * self.cost_per_unit)
+
+    @property
+    def realized_gains_change_percentage(self):
+        if not self.amortized_quantities:
+            return 0.0
+
+        return float(self.total_amortized_value/(self.total_amortized * self.cost_per_unit))
+
+    @property
+    def realized_gains_change_percentage_string(self):
+        return "{0:.2%}".format(self.realized_gains_change_percentage)
 
     def add_amortized(self, quantity: Decimal, total_value: Decimal):
         self.amortized_quantities.append((quantity, total_value))
