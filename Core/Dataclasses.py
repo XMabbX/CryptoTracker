@@ -23,6 +23,7 @@ class TransactionType(Enum):
     SAVING_PURCHASE = 8
     SAVING_INTEREST = 9
     SAVING_REDEMPTION = 10
+    LIQUID_SWAP_ADD = 11
 
 
 @dataclass(frozen=True)

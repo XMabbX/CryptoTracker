@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Iterable, Tuple
+from typing import Dict, List, Optional, Iterable, Tuple, Set
 from decimal import Decimal
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -16,7 +16,8 @@ SPOT_OPERATIONS = (Transaction.TransactionType.SAVING_REDEMPTION,
                    Transaction.TransactionType.FEE,
                    Transaction.TransactionType.SELL,
                    Transaction.TransactionType.SAVING_PURCHASE,
-                   Transaction.TransactionType.POS_PURCHASE)
+                   Transaction.TransactionType.POS_PURCHASE,
+                   Transaction.TransactionType.LIQUID_SWAP_ADD)
 
 IN_SPOT_OPERATIONS = (Transaction.TransactionType.SAVING_REDEMPTION,
                       Transaction.TransactionType.SAVING_INTEREST,
@@ -27,9 +28,11 @@ IN_SPOT_OPERATIONS = (Transaction.TransactionType.SAVING_REDEMPTION,
 OUT_SPOT_OPERATIONS = (Transaction.TransactionType.FEE,
                        Transaction.TransactionType.SELL,
                        Transaction.TransactionType.SAVING_PURCHASE,
-                       Transaction.TransactionType.POS_PURCHASE)
+                       Transaction.TransactionType.POS_PURCHASE,
+                       Transaction.TransactionType.LIQUID_SWAP_ADD)
 
 EARN_OPERATIONS = (Transaction.TransactionType.SAVING_PURCHASE, Transaction.TransactionType.POS_PURCHASE,
+                   Transaction.TransactionType.LIQUID_SWAP_ADD,
                    Transaction.TransactionType.SAVING_REDEMPTION, Transaction.TransactionType.POS_REDEMPTION)
 
 
@@ -77,10 +80,17 @@ class CoinData:
     def _get_total_unrealized_gains(self):
         return sum(trans.unrealized_gains for trans in self._buy_transactions_data)
 
+    def _get_current_total_value(self):
+        return sum(trans.unrealized_total_value for trans in self._buy_transactions_data)
+
     def _get_total_realized_gains(self):
         return sum(trans.realized_gains for trans in self._buy_transactions_data)
 
+    def _get_total_realized_value(self):
+        return sum(trans.total_amortized_value for trans in self._buy_transactions_data)
+
     def print_status(self):
+        print(f"-------------------------------------------------------------------------------------------")
         print(f"Coin info: {self.coin}")
         if self.current_value_per_unit:
             print(f"Current quantity in stock: {self._spot_quantity}; "
@@ -102,8 +112,10 @@ class CoinData:
         for buy_trans in self._buy_transactions_data:
             print(buy_trans)
 
+        print(f"Total current value: {self._get_current_total_value()}")
         print(f"Total unrealized gains: {self._get_total_unrealized_gains()}")
         print(f"Total realized gains: {self._get_total_realized_gains()}")
+        print(f"Total realized value: {self._get_total_realized_value()}")
 
 
 @dataclass
@@ -134,13 +146,15 @@ class BuyTransactionData(TransactionData):
         self.amortized_quantities = []
         super().__post_init__()
 
-    def get_spot_quantity(self):
+    @property
+    def spot_quantity(self):
         if not self.amortized_quantities:
             return self.transaction.quantity
         return self.transaction.quantity - sum(x[0] for x in self.amortized_quantities)
 
-    def get_current_cost(self):
-        return self.get_spot_quantity() * self.cost_per_unit
+    @property
+    def current_cost(self):
+        return self.spot_quantity * self.cost_per_unit
 
     @property
     def total_amortized(self):
@@ -156,14 +170,14 @@ class BuyTransactionData(TransactionData):
 
     @property
     def unrealized_total_value(self):
-        current_quantity = self.get_spot_quantity()
+        current_quantity = self.spot_quantity
         if not current_quantity > 0:
             return Decimal(0)
         return current_quantity * self.current_value_per_unit
 
     @property
     def unrealized_gains(self):
-        current_quantity = self.get_spot_quantity()
+        current_quantity = self.spot_quantity
         if not current_quantity > 0:
             return Decimal(0)
 
@@ -171,11 +185,11 @@ class BuyTransactionData(TransactionData):
 
     @property
     def unrealized_gains_change_percentage(self):
-        current_quantity = self.get_spot_quantity()
+        current_quantity = self.spot_quantity
         if not current_quantity > 0:
             return 0.0
 
-        return float(self.unrealized_gains/(current_quantity * self.cost_per_unit))
+        return float(self.unrealized_gains / (current_quantity * self.cost_per_unit))
 
     @property
     def unrealized_gains_change_percentage_string(self):
@@ -192,7 +206,7 @@ class BuyTransactionData(TransactionData):
         if not self.amortized_quantities:
             return 0.0
 
-        return float(self.total_amortized_value/(self.total_amortized * self.cost_per_unit))
+        return float(self.total_amortized_value / (self.total_amortized * self.cost_per_unit))
 
     @property
     def realized_gains_change_percentage_string(self):
@@ -240,18 +254,98 @@ class NowPrecision:
     H1 = '1Hour'
 
 
+class TransactionValidator:
+
+    def __init__(self, database: 'DataBaseAPI', duplicates_cache_path: str = None):
+        self._duplicate_ids = self._acknowledge_duplicates(duplicates_cache_path)
+        self._database_api = database
+
+    @staticmethod
+    def _acknowledge_duplicates(path: str) -> Set[str]:
+        if path is None:
+            return set()
+
+        with open(path, 'r') as f:
+            return set(line.strip() for line in f.readlines())
+
+    def validate_and_parse_transactions(self, list_transactions: List[ProtoTransaction]) -> List[Transaction]:
+        new_transactions = []
+        for proto_transaction in list_transactions:
+            transaction = self._parse_proto_transaction(proto_transaction)
+            self._validate_quantity(transaction)
+            new_transactions.append(transaction)
+
+        self._validate_duplicates_imports(new_transactions)
+        self._duplicate_in_database(new_transactions)
+
+        return new_transactions
+
+    @staticmethod
+    def _validate_quantity(transaction: Transaction):
+        if transaction.operation_type in IN_SPOT_OPERATIONS:
+            assert transaction.quantity >= 0, "Enter operations must be positive"
+        if transaction.operation_type in OUT_SPOT_OPERATIONS:
+            assert transaction.quantity <= 0, "Exit operations must be negative"
+
+    def _duplicate_in_database(self, list_transactions: List[Transaction]):
+        for transaction in list_transactions:
+            if transaction.id in self._duplicate_ids:
+                continue
+            self._database_api.exists_transaction(transaction)
+
+    def _validate_duplicates_imports(self, list_transactions: List[Transaction]) -> List[Transaction]:
+        seen = set()
+
+        valid_transactions = []
+        for transaction in list_transactions:
+            if transaction.id in seen:
+                if transaction.id in self._duplicate_ids:
+                    continue
+                self._raise_duplicated(list_transactions, transaction)
+
+            seen.add(transaction.id)
+            valid_transactions.append(transaction)
+
+        return valid_transactions
+
+    @staticmethod
+    def _raise_duplicated(list_transactions: List[Transaction], transaction: Transaction):
+        found_duplicates = []
+        for duplicated_candidate in list_transactions:
+            if duplicated_candidate == transaction:
+                found_duplicates.append(duplicated_candidate)
+        raise ValueError(f"Duplicated transactions in the import list\n " + '\n'.join(str(x) for x in found_duplicates))
+
+    def _parse_proto_transaction(self, proto: ProtoTransaction) -> Transaction:
+        coin = self._get_database_coin(proto)
+
+        if proto.operation_type is Transaction.TransactionType.BUY and proto.value < 0:
+            operation_type = Transaction.TransactionType.SELL
+        elif proto.operation_type is Transaction.TransactionType.SELL and proto.value > 0:
+            operation_type = Transaction.TransactionType.BUY
+        else:
+            operation_type = proto.operation_type
+
+        return Transaction(proto.value, coin, operation_type, proto.UTC_Time, proto.account)
+
+    def _get_database_coin(self, proto: ProtoTransaction) -> Coin:
+        try:
+            return self._database_api.get_coin(proto.coin_name)
+        except KeyError:
+            return self._database_api.add_coin(proto.coin_name)
+
+
 class DataBaseAPI:
     NowPrecision = NowPrecision
 
     def __init__(self, external_api: APIBase, database=None, return_fiat='EUR',
-                 now_precission: NowPrecision = NowPrecision.M15):
+                 now_precision: NowPrecision = NowPrecision.M15):
         if database is None or not isinstance(database, DataBase):
             raise ValueError("A database must exist")
         self._database = database
         self._external_api = external_api
-        self._duplicate_ids = set()
         self._return_fiat = return_fiat
-        self._now_precision = now_precission
+        self._now_precision = now_precision
 
         self.active_processes = (self._compute_current_value_per_coin,
                                  self._compute_spot_quantities,
@@ -271,11 +365,6 @@ class DataBaseAPI:
 
     def print_coin_data(self, coin_tick):
         self.get_coin_data(coin_tick).print_status()
-
-    def acknowledge_duplicates(self, path):
-        with open(path, 'r') as f:
-            for line in f.readlines():
-                self._duplicate_ids.add(line.strip())
 
     def add_coin(self, coin_name: str) -> Coin:
         if coin_name in self._database.holdings:
@@ -310,72 +399,14 @@ class DataBaseAPI:
         except KeyError:
             pass
 
+    def get_coin_list(self) -> List[str]:
+        return list(self._database.holdings.keys())
+
     def get_coin(self, coin_name: str) -> Coin:
         return self._database.holdings[coin_name]
 
     def get_coin_data(self, coin_name: str) -> CoinData:
         return self._database.holdings_data[coin_name]
-
-    def validate_import(self, list_transactions: List[ProtoTransaction]):
-        # print("Validating transactions...")
-        new_transactions = []
-        for proto_transaction in list_transactions:
-            transaction = self._convert_transaction(proto_transaction)
-            if transaction.operation_type in IN_SPOT_OPERATIONS:
-                assert transaction.quantity >= 0, "Enter operations must be positive"
-
-            if transaction.operation_type in OUT_SPOT_OPERATIONS:
-                assert transaction.quantity <= 0, "Exit operations must be negative"
-            new_transactions.append(transaction)
-
-        return self._validate_duplicates(new_transactions)
-
-    def _validate_duplicates(self, list_transactions: List[Transaction]) -> List[Transaction]:
-        seen = set()
-
-        valid_transactions = []
-        for transaction in list_transactions:
-            if transaction.id in self._duplicate_ids:
-                continue
-
-            if not self._validate_transaction(transaction):
-                raise ValueError(f"Transaction {transaction} not valid, it is duplicated in the database")
-
-        for transaction in list_transactions:
-
-            if transaction.id in seen:
-                if transaction.id in self._duplicate_ids:
-                    continue
-
-                duplicates = []
-                for duplicated_candidate in list_transactions:
-                    if duplicated_candidate == transaction:
-                        duplicates.append(duplicated_candidate)
-                raise ValueError(
-                    f"Duplicated transactions in the import list\n " + '\n'.join(str(x) for x in duplicates))
-
-            seen.add(transaction.id)
-            valid_transactions.append(transaction)
-
-        return valid_transactions
-
-    def _convert_transaction(self, proto: ProtoTransaction) -> Transaction:
-        try:
-            coin = self.get_coin(proto.coin_name)
-        except KeyError:
-            coin = self.add_coin(proto.coin_name)
-
-        if proto.operation_type is Transaction.TransactionType.BUY and proto.value < 0:
-            operation_type = Transaction.TransactionType.SELL
-        else:
-            operation_type = proto.operation_type
-
-        return Transaction(proto.value, coin, operation_type, proto.UTC_Time, proto.account)
-
-    def _validate_transaction(self, transaction: Transaction) -> bool:
-        if transaction.id in self._database.transactions:
-            return False
-        return True
 
     def add_transaction(self, transaction: [Transaction, List[Transaction]]):
         if isinstance(transaction, list):
@@ -391,6 +422,10 @@ class DataBaseAPI:
 
         coin.transactions.append(transaction)
         self._database.transactions[transaction.id] = transaction
+
+    def exists_transaction(self, transaction: Transaction):
+        if transaction.id in self._database.transactions:
+            raise ValueError(f"Transaction {transaction} not valid, it is duplicated in the database")
 
     def _get_now_time(self) -> datetime:
         now_full = datetime.now()
@@ -436,7 +471,12 @@ class DataBaseAPI:
 
     def process_coin_data(self, coin_tick: Optional[str] = None):
         if coin_tick is None:
-            for coin_tick in self._database.holdings_data.keys():
+            coins_list = list(self._database.holdings.keys())
+            number_of_coins = len(coins_list)
+            for i, coin_tick in enumerate(coins_list):
+                print(f"Processing coin {coin_tick}, {i}/{number_of_coins}")
+                if coin_tick in ('EUR', 'BUSD', 'USDT'):
+                    continue
                 self.process_coin_data(coin_tick)
         else:
             try:
@@ -476,11 +516,6 @@ class DataBaseAPI:
 
         coin_data._fees_transactions = list_trans
 
-    # def _compute_buy_transactions(self, coin_data: CoinData):
-    #     list_trans_to_process = coin_data.get_transactions((Transaction.TransactionType.BUY,))
-    #     data_processed = self._process_transactions_data(list_trans_to_process)
-    #     coin_data._buy_transactions_data = data_processed
-
     def _compute_earnings(self, coin_data: CoinData):
         list_trans_to_process = coin_data.get_transactions((Transaction.TransactionType.POS_INTEREST,
                                                             Transaction.TransactionType.SAVING_INTEREST))
@@ -519,7 +554,7 @@ class DataBaseAPI:
                 for buy_trans in buy_transactions:
                     if sell_quantity <= 0:
                         break
-                    current_quantity = buy_trans.get_spot_quantity()
+                    current_quantity = buy_trans.spot_quantity
                     if current_quantity:
                         if sell_quantity <= current_quantity:
                             sell_value = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
@@ -535,8 +570,8 @@ class DataBaseAPI:
                             buy_trans.add_amortized(amortized_quantity, sell_value * amortized_quantity)
                             sell_quantity -= amortized_quantity
 
-        sum_quantities = sum(trans.get_spot_quantity() for trans in buy_transactions)
-        sum_costs = sum(trans.get_current_cost() for trans in buy_transactions)
+        sum_quantities = sum(trans.spot_quantity for trans in buy_transactions)
+        sum_costs = sum(trans.current_cost for trans in buy_transactions)
 
         coin_data.current_average_cost = sum_costs / sum_quantities
         coin_data._buy_transactions_data = buy_transactions

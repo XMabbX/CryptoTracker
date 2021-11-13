@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Dict
-from unittest import TestCase, mock
+from unittest import TestCase
+
 from freezegun import freeze_time
 
-from ..database import DataBase, DataBaseAPI, APIBase
 from ..Dataclasses import Coin, ProtoTransaction, Transaction
+from ..database import DataBase, DataBaseAPI, APIBase, TransactionValidator
 
 
 class MockExternalAPI(APIBase):
@@ -25,10 +26,6 @@ class MockExternalAPI(APIBase):
         return self._cached_data[cached_id]
 
 
-def get_now_time():
-    return datetime(2021, 1, 1, 0, 0, 0)
-
-
 @freeze_time("2021-01-01 00:00:00")
 class TestDataBaseAPI(TestCase):
 
@@ -36,6 +33,7 @@ class TestDataBaseAPI(TestCase):
         self.db = DataBaseAPI.create_new_database('test')
         self.external_api = MockExternalAPI()
         self.api = DataBaseAPI(self.external_api, self.db)
+        self.validator = TransactionValidator(self.api)
 
     def _create_buy_proto_transaction(self, first, second, quantity, date, cost_per_coin):
         proto = ProtoTransaction(quantity, first, ProtoTransaction.TransactionType.BUY, date, 'test')
@@ -105,7 +103,7 @@ class TestDataBaseAPI(TestCase):
         time = datetime.now()
         proto1 = self._create_buy_proto_transaction('BTC', 'EUR', Decimal(10), time, Decimal(1))
 
-        self.api.validate_import([proto1])
+        self.validator.validate_and_parse_transactions([proto1])
 
         coin = self.api.get_coin('BTC')
 
@@ -116,7 +114,7 @@ class TestDataBaseAPI(TestCase):
         time = datetime.now()
         proto1 = self._create_buy_proto_transaction('BTC', 'EUR', Decimal(10), time, Decimal(1))
 
-        valid_transactions = self.api.validate_import([proto1])
+        valid_transactions = self.validator.validate_and_parse_transactions([proto1])
 
         trans = valid_transactions[0]
 
@@ -130,14 +128,14 @@ class TestDataBaseAPI(TestCase):
         proto_list = [ProtoTransaction(Decimal(-10), 'BTC', ProtoTransaction.TransactionType.DEPOSIT, time, 'test')]
 
         with self.assertRaises(AssertionError):
-            self.api.validate_import(proto_list)
+            self.validator.validate_and_parse_transactions(proto_list)
 
     def test_invalid_value_out_transaction(self):
         time = datetime.now()
-        proto_list = [ProtoTransaction(Decimal(10), 'BTC', ProtoTransaction.TransactionType.SELL, time, 'test')]
+        proto_list = [ProtoTransaction(Decimal(10), 'BTC', ProtoTransaction.TransactionType.POS_PURCHASE, time, 'test')]
 
         with self.assertRaises(AssertionError):
-            self.api.validate_import(proto_list)
+            self.validator.validate_and_parse_transactions(proto_list)
 
     def test_duplicate_transaction(self):
         time = datetime.now()
@@ -145,12 +143,12 @@ class TestDataBaseAPI(TestCase):
                       ProtoTransaction(Decimal(10), 'BTC', ProtoTransaction.TransactionType.BUY, time, 'test')]
 
         with self.assertRaises(ValueError):
-            self.api.validate_import(proto_list)
+            self.validator.validate_and_parse_transactions(proto_list)
 
     def test_add_transaction(self):
         time = datetime.now()
         proto1 = self._create_buy_proto_transaction('BTC', 'EUR', Decimal(10), time, Decimal(1))
-        valid_transactions = self.api.validate_import([proto1])
+        valid_transactions = self.validator.validate_and_parse_transactions([proto1])
         self.api.add_transaction(valid_transactions)
 
         coin = self.api.get_coin('BTC')
@@ -161,7 +159,7 @@ class TestDataBaseAPI(TestCase):
     def test_coin_data_generation(self):
         time = datetime.now()
         proto1 = self._create_buy_proto_transaction('BTC', 'EUR', Decimal(10), time, Decimal(1))
-        valid_transactions = self.api.validate_import([proto1])
+        valid_transactions = self.validator.validate_and_parse_transactions([proto1])
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = []
         self.api.process_coin_data('BTC')
@@ -186,7 +184,7 @@ class TestDataBaseAPI(TestCase):
                       self._create_BTC_pos_int_proto(Decimal(1), time_start + timedelta(days=2)),
                       self._create_BTC_pos_redem_proto(Decimal(2), time_start)]
 
-        valid_transactions = self.api.validate_import(proto_list)
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_earnings]
         self.api.process_coin_data('BTC')
@@ -207,7 +205,7 @@ class TestDataBaseAPI(TestCase):
         proto1 = self._create_buy_proto_transaction('BTC', 'EUR', Decimal(10), time, Decimal(1))
         self.external_api.add_fake_cache_data('BTCEUR', time_now, Decimal(2))
 
-        valid_transactions = self.api.validate_import([proto1])
+        valid_transactions = self.validator.validate_and_parse_transactions([proto1])
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_current_value_per_coin]
         self.api.process_coin_data('BTC')
@@ -226,7 +224,7 @@ class TestDataBaseAPI(TestCase):
                       self._create_BTC_pos_purchase_proto(Decimal(-10), time_now),
                       self._create_BTC_pos_int_proto(Decimal(1), time_now)]
 
-        valid_transactions = self.api.validate_import(proto_list)
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_spot_quantities]
         self.api.process_coin_data('BTC')
@@ -246,7 +244,7 @@ class TestDataBaseAPI(TestCase):
                       self._create_BTC_pos_int_proto(Decimal(1), time_now),
                       self._create_BTC_pos_redem_proto(Decimal(2), time_now)]
 
-        valid_transactions = self.api.validate_import(proto_list)
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_spot_quantities, self.api._compute_earn_quantities]
         self.api.process_coin_data('BTC')
@@ -267,7 +265,7 @@ class TestDataBaseAPI(TestCase):
                       self._create_BTC_pos_int_proto(Decimal(1), time_now),
                       self._create_BTC_pos_redem_proto(Decimal(2), time_now)]
 
-        valid_transactions = self.api.validate_import(proto_list)
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_fees_quantities]
         self.api.process_coin_data('BTC')
@@ -294,7 +292,7 @@ class TestDataBaseAPI(TestCase):
                       self._create_BTC_pos_int_proto(Decimal(1), time_start + timedelta(days=2)),
                       self._create_BTC_pos_redem_proto(Decimal(2), time_start)]
 
-        valid_transactions = self.api.validate_import(proto_list)
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_earnings]
         self.api.process_coin_data('BTC')
@@ -311,7 +309,7 @@ class TestDataBaseAPI(TestCase):
         self.external_api.add_fake_cache_data('BTCEUR', datetime.now(), Decimal(50))
         proto_list = [self._create_BTC_buy_proto(Decimal(10), time_start)]
 
-        valid_transactions = self.api.validate_import(proto_list)
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_gains]
         self.api.process_coin_data('BTC')
@@ -327,8 +325,8 @@ class TestDataBaseAPI(TestCase):
         assert buy_transaction.change_value == Decimal(400)
         assert buy_transaction.change_percentage == Decimal(4)
         assert buy_transaction.change_percentage_string == "400.00%"
-        assert buy_transaction.get_current_cost() == Decimal(100)
-        assert buy_transaction.get_spot_quantity() == Decimal(10)
+        assert buy_transaction.current_cost == Decimal(100)
+        assert buy_transaction.spot_quantity == Decimal(10)
 
         assert coin_data.current_average_cost == Decimal(10)
 
@@ -351,7 +349,7 @@ class TestDataBaseAPI(TestCase):
         proto_list = [self._create_BTC_buy_proto(Decimal(10), time_start),
                       self._create_BTC_sell_proto(Decimal(-5), time_1)]
 
-        valid_transactions = self.api.validate_import(proto_list)
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_gains]
         self.api.process_coin_data('BTC')
@@ -367,8 +365,8 @@ class TestDataBaseAPI(TestCase):
         assert buy_transaction.change_value == Decimal(400)
         assert buy_transaction.change_percentage == Decimal(4)
         assert buy_transaction.change_percentage_string == "400.00%"
-        assert buy_transaction.get_spot_quantity() == Decimal(5)
-        assert buy_transaction.get_current_cost() == Decimal(50)
+        assert buy_transaction.spot_quantity == Decimal(5)
+        assert buy_transaction.current_cost == Decimal(50)
 
         assert coin_data.current_average_cost == Decimal(10)
 
@@ -397,7 +395,7 @@ class TestDataBaseAPI(TestCase):
                       self._create_BTC_sell_proto(Decimal(-5), time_1),
                       self._create_BTC_sell_proto(Decimal(-2), time_2)]
 
-        valid_transactions = self.api.validate_import(proto_list)
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_gains]
         self.api.process_coin_data('BTC')
@@ -406,8 +404,8 @@ class TestDataBaseAPI(TestCase):
 
         assert len(coin_data._buy_transactions_data) == 1
         buy_transaction = coin_data._buy_transactions_data[0]
-        assert buy_transaction.get_spot_quantity() == Decimal(3)
-        assert buy_transaction.get_current_cost() == Decimal(30)
+        assert buy_transaction.spot_quantity == Decimal(3)
+        assert buy_transaction.current_cost == Decimal(30)
         assert buy_transaction.cost == Decimal(100)
         assert buy_transaction.cost_per_unit == Decimal(10)
         assert buy_transaction.current_value_per_unit == Decimal(50)
@@ -447,7 +445,7 @@ class TestDataBaseAPI(TestCase):
                       self._create_BTC_buy_proto(Decimal(5), time_1),
                       self._create_BTC_sell_proto(Decimal(-2), time_2)]
 
-        valid_transactions = self.api.validate_import(proto_list)
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_gains]
         self.api.process_coin_data('BTC')
@@ -456,8 +454,8 @@ class TestDataBaseAPI(TestCase):
 
         assert len(coin_data._buy_transactions_data) == 2
         buy_transaction = coin_data._buy_transactions_data[0]
-        assert buy_transaction.get_spot_quantity() == Decimal(8)
-        assert buy_transaction.get_current_cost() == Decimal(80)
+        assert buy_transaction.spot_quantity == Decimal(8)
+        assert buy_transaction.current_cost == Decimal(80)
         assert buy_transaction.cost == Decimal(100)
         assert buy_transaction.cost_per_unit == Decimal(10)
         assert buy_transaction.current_value_per_unit == Decimal(50)
@@ -481,7 +479,7 @@ class TestDataBaseAPI(TestCase):
                       self._create_BTC_buy_proto(Decimal(5), time_1),
                       self._create_BTC_sell_proto(Decimal(-12), time_2)]
 
-        valid_transactions = self.api.validate_import(proto_list)
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
         self.api.active_processes = [self.api._compute_gains]
         self.api.process_coin_data('BTC')
@@ -490,8 +488,8 @@ class TestDataBaseAPI(TestCase):
 
         assert len(coin_data._buy_transactions_data) == 2
         buy_transaction = coin_data._buy_transactions_data[0]
-        assert buy_transaction.get_spot_quantity() == Decimal(0)
-        assert buy_transaction.get_current_cost() == Decimal(0)
+        assert buy_transaction.spot_quantity == Decimal(0)
+        assert buy_transaction.current_cost == Decimal(0)
         assert buy_transaction.cost == Decimal(100)
         assert buy_transaction.cost_per_unit == Decimal(10)
         assert buy_transaction.current_value_per_unit == Decimal(50)
@@ -514,8 +512,8 @@ class TestDataBaseAPI(TestCase):
         assert buy_transaction.realized_gains_change_percentage_string == "300.00%"
 
         buy_transaction = coin_data._buy_transactions_data[1]
-        assert buy_transaction.get_spot_quantity() == Decimal(3)
-        assert buy_transaction.get_current_cost() == Decimal(60)
+        assert buy_transaction.spot_quantity == Decimal(3)
+        assert buy_transaction.current_cost == Decimal(60)
         assert buy_transaction.cost == Decimal(100)
         assert buy_transaction.cost_per_unit == Decimal(20)
         assert buy_transaction.current_value_per_unit == Decimal(50)

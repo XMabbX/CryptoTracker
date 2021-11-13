@@ -12,7 +12,7 @@ from .Dataclasses import CoinInfo
 
 class APIBase:
 
-    def get_conversion_rate(self, first: str, second: str, date: datetime = None) -> Decimal:
+    def get_conversion_rate(self, first: str, second: str, date: datetime) -> Decimal:
         raise NotImplementedError
 
 
@@ -46,6 +46,8 @@ class CoinAPI:
                   'BNB': CoinInfo('BNB', 'Binance Coin'),
                   'AXS': CoinInfo('AXS', 'Axis Infinite'),
                   'MATIC': CoinInfo('MATIC', 'Matic'),
+                  'DOT': CoinInfo('DOT', 'PolkaDot'),
+                  'LRC': CoinInfo('LRC', 'Loopring'),
                   'LDFTM': __FTM_coin_info}
 
     @classmethod
@@ -117,6 +119,9 @@ class BinanceAPI(APIBase):
             self._last_minute = datetime.now()
             self._total_calls = 0
 
+    class ConversionError(Exception):
+        pass
+
     def __init__(self, keys_path, cache_folder):
 
         keys = self._readKeys(keys_path)
@@ -126,8 +131,7 @@ class BinanceAPI(APIBase):
         self._check_cache_folder(self._cache_folder_path)
         self._cache_pairs_path = self._cache_folder_path / "pairs_cache.csv"
 
-        self._client = Client(**keys)
-        self._client.ping()
+        self._client = self._create_client(keys)
 
         self._coin_dict = {}
         self._pairs_priority = ('BTC', 'ETH', 'BNB', 'BUSD', 'USDT')
@@ -138,7 +142,12 @@ class BinanceAPI(APIBase):
         symbols_dataframe = self._check_pairs_cache(self._cache_pairs_path)
         self._build_pairs(symbols_dataframe)
 
-    def _get_price(self, symbol: str, target_time: datetime) -> str:
+    def _create_client(self, keys):
+        client = Client(**keys)
+        client.ping()
+        return client
+
+    def _get_price(self, symbol: str, target_time: datetime) -> Decimal:
 
         start_time = target_time - timedelta(seconds=30)
         start_time_timestamp = int(start_time.timestamp() * 1000)
@@ -149,30 +158,46 @@ class BinanceAPI(APIBase):
                                                   start_time_timestamp,
                                                   end_time_timestamp)
 
+        if not data:
+            raise self.ConversionError
         kline = data[0]
         average = (Decimal(kline[1]) + Decimal(kline[4])) * Decimal(0.5)
         return average
 
-    def get_conversion_rate(self, first: str, second: str, date: datetime = None) -> Decimal:
+    def get_conversion_rate(self, first: str, second: str, date: datetime) -> Decimal:
         return self._conversion(self.Pair(first + second, self._get_coin(first), self._get_coin(second)), date)
 
-    def _conversion(self, pair: Pair, date: datetime) -> Decimal:
+    def _conversion(self, pair: Pair, date: datetime, force_search: bool = False) -> Decimal:
         coin = pair.first
         symbol = pair.symbol
         inv_symbol = pair.inv_symbol
+        if force_search:
+            return self._conversion_backtracking(coin, pair, date)
+
         if symbol in coin.coin_pairs:
-            return self._get_conversion(coin.coin_pairs[symbol], date)
+            try:
+                return self._get_conversion(coin.coin_pairs[symbol], date)
+            except self.ConversionError:
+                return self._conversion(pair, date, force_search=True)
         elif inv_symbol in coin.coin_pairs:
-            return Decimal(1) / self._get_conversion(coin.coin_pairs[symbol], date)
+            try:
+                return Decimal(1) / self._get_conversion(coin.coin_pairs[inv_symbol], date)
+            except self.ConversionError:
+                return self._conversion(pair, date, force_search=True)
         else:
-            for possible in self._pairs_priority:
+            return self._conversion_backtracking(coin, pair, date)
+
+    def _conversion_backtracking(self, coin: Coin, pair: Pair, date: datetime):
+        for possible in self._pairs_priority:
+            try:
                 if pair.first.coin_tick + possible in coin.coin_pairs:
                     return self._get_conversion(coin.coin_pairs[pair.first.coin_tick + possible], date) * \
-                           self._conversion(self.Pair(possible + pair.second.coin_tick,
-                                                      self._get_coin(possible),
+                           self._conversion(self.Pair(possible + pair.second.coin_tick, self._get_coin(possible),
                                                       pair.second),
                                             date)
-            raise ValueError(f"Not conversion found for {pair.first.coin_tick} and {pair.second.coin_tick}")
+            except self.ConversionError:
+                pass
+        raise ValueError(f"Not conversion found for {pair.first.coin_tick} and {pair.second.coin_tick}")
 
     def _get_coin(self, coin_name: str) -> Coin:
         try:
@@ -225,6 +250,7 @@ class BinanceAPI(APIBase):
             coin_second = self._get_or_create_coin(row['Second'])
             pair = self.Pair(row['Symbol'], coin_first, coin_second)
             coin_first.coin_pairs[pair.symbol] = pair
+            coin_second.coin_pairs[pair.symbol] = pair
 
     def _get_or_create_coin(self, coin_name):
         if coin_name not in self._coin_dict:

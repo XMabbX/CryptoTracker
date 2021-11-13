@@ -67,7 +67,7 @@ class BinanceCSVReader:
     @staticmethod
     def _get_transaction_type(transaction_name: str, value: float) -> ProtoTransaction.TransactionType:
         # ['Deposit' 'Fee' 'Transaction Related' 'Buy' 'POS savings purchase',
-        # 'POS savings interest' 'Sell' 'POS savings redemption']
+        # 'POS savings interest' 'Sell' 'POS savings redemption', 'Liquid Swap add/sell']
 
         if transaction_name in ("The Easiest Way to Trade", "Small assets exchange BNB", "Transaction Related",):
             transaction_name = "Sell" if value < 0 else "Buy"
@@ -92,5 +92,7 @@ class BinanceCSVReader:
             return ProtoTransaction.TransactionType.POS_INTEREST
         elif transaction_name == 'POS savings redemption':
             return ProtoTransaction.TransactionType.POS_REDEMPTION
+        elif transaction_name == 'Liquid Swap add/sell':
+            return ProtoTransaction.TransactionType.LIQUID_SWAP_ADD
         else:
             raise ValueError(f"Operation name not found: {transaction_name}")
