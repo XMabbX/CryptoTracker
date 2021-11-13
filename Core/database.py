@@ -531,23 +531,15 @@ class DataBaseAPI:
                     sell_quantity *= -1
 
                 for buy_trans in buy_transactions:
-                    if sell_quantity <= 0:
-                        break
                     current_quantity = buy_trans.spot_quantity
                     if current_quantity:
                         if sell_quantity <= current_quantity:
-                            sell_value = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
-                                                                                self._return_fiat,
-                                                                                trans.UTC_Time)
-                            buy_trans.add_amortized(sell_quantity, sell_value * sell_quantity)
-                            break
+                            self._add_amortization(buy_trans, sell_quantity, trans)
                         else:
-                            amortized_quantity = current_quantity
-                            sell_value = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
-                                                                                self._return_fiat,
-                                                                                trans.UTC_Time)
-                            buy_trans.add_amortized(amortized_quantity, sell_value * amortized_quantity)
-                            sell_quantity -= amortized_quantity
+                            self._add_amortization(buy_trans, current_quantity, trans)
+                        sell_quantity -= current_quantity
+                    if sell_quantity <= 0:
+                        break
                 else:
                     raise ValueError(f"Coin {coin_data.coin.coin_info.tick} has a sell transaction and no coins to sell")
 
@@ -556,6 +548,12 @@ class DataBaseAPI:
 
         coin_data.current_average_cost = sum_costs / sum_quantities
         coin_data._buy_transactions_data = buy_transactions
+
+    def _add_amortization(self, buy_trans, sell_quantity, trans):
+        sell_value = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
+                                                            self._return_fiat,
+                                                            trans.UTC_Time)
+        buy_trans.add_amortized(sell_quantity, sell_value * sell_quantity)
 
     def _create_buy_transaction(self, trans):
         cost = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
