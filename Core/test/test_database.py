@@ -145,6 +145,14 @@ class TestDataBaseAPI(TestCase):
         with self.assertRaises(ValueError):
             self.validator.validate_and_parse_transactions(proto_list)
 
+    def test_duplicate_transaction_whitelist(self):
+        time = datetime.now()
+        proto_list = [ProtoTransaction(Decimal(10), 'BTC', ProtoTransaction.TransactionType.BUY, time, 'test'),
+                      ProtoTransaction(Decimal(10), 'BTC', ProtoTransaction.TransactionType.BUY, time, 'test')]
+        self.validator._duplicate_ids.add('0x11878b3c823c45000_0x2_BTC_10')
+        new_transactions = self.validator.validate_and_parse_transactions(proto_list)
+        assert len(new_transactions) == 1
+
     def test_add_transaction(self):
         time = datetime.now()
         proto1 = self._create_buy_proto_transaction('BTC', 'EUR', Decimal(10), time, Decimal(1))
