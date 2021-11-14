@@ -239,7 +239,7 @@ class TestDataBaseAPI(TestCase):
 
         coin_data = self.api.get_coin_data('BTC')
 
-        assert coin_data._spot_quantity == Decimal(48)
+        assert coin_data.spot_quantity == Decimal(48)
 
     def test_coin_data_earn_quantities(self):
         time_now = datetime.now()
@@ -259,8 +259,8 @@ class TestDataBaseAPI(TestCase):
 
         coin_data = self.api.get_coin_data('BTC')
 
-        assert coin_data._spot_quantity == Decimal(50)
-        assert coin_data._earn_quantity == Decimal(8)
+        assert coin_data.spot_quantity == Decimal(50)
+        assert coin_data.earn_quantity == Decimal(8)
 
     def test_coin_data_fees_quantities(self):
         time_now = datetime.now()
@@ -280,8 +280,8 @@ class TestDataBaseAPI(TestCase):
 
         coin_data = self.api.get_coin_data('BTC')
 
-        assert len(coin_data._fees_transactions) == 1
-        fee_trans = coin_data._fees_transactions[0]
+        assert len(coin_data.fees_transactions) == 1
+        fee_trans = coin_data.fees_transactions[0]
         assert fee_trans.transaction.quantity == Decimal(-1)
         assert fee_trans.cost_per_unit == Decimal(10)
         assert fee_trans.cost == Decimal(-10)
@@ -305,11 +305,36 @@ class TestDataBaseAPI(TestCase):
         self.api.active_processes = [self.api._compute_earnings]
         self.api.process_coin_data('BTC')
 
-        coin_earn = self.api.get_coin_data('BTC')._coin_earn
+        coin_earn = self.api.get_coin_data('BTC').coin_earn
 
-        assert coin_earn.quantity == Decimal(4)
+        assert coin_earn.total_earn_quantity == Decimal(4)
         assert coin_earn.current_conversion_rate == Decimal(50)
-        assert coin_earn.current_value == Decimal(200)
+        assert coin_earn.total_current_value == Decimal(200)
+
+    def test_coin_data_earnings_amortized(self):
+        time_start = datetime.now() - timedelta(days=10)
+        time_1 = time_start + timedelta(days=1)
+        time_2 = time_start + timedelta(days=2)
+        self.external_api.add_fake_cache_data('BTCEUR', time_start, Decimal(10))
+        self.external_api.add_fake_cache_data('BTCEUR', time_1, Decimal(20))
+        self.external_api.add_fake_cache_data('BTCEUR', time_2, Decimal(30))
+        self.external_api.add_fake_cache_data('BTCEUR', datetime.now(), Decimal(50))
+        proto_list = [self._create_BTC_pos_int_proto(Decimal(1), time_start),
+                      self._create_BTC_pos_int_proto(Decimal(2), time_1),
+                      self._create_BTC_pos_int_proto(Decimal(1), time_2),
+                      self._create_BTC_sell_proto(Decimal(-2), time_2)]
+
+        valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
+        self.api.add_transaction(valid_transactions)
+        self.api.active_processes = [self.api._compute_earnings, self.api._compute_gains]
+        self.api.process_coin_data('BTC')
+
+        coin_earn = self.api.get_coin_data('BTC').coin_earn
+
+        assert len(coin_earn.amortized_quantities) == 1
+        assert coin_earn.current_quantity == Decimal(2)
+        assert coin_earn.current_value == Decimal(100)
+        assert coin_earn.realized_gains == Decimal(60)
 
     def test_coin_data_gains_single_buy(self):
         time_start = datetime.now() - timedelta(days=10)
@@ -324,8 +349,8 @@ class TestDataBaseAPI(TestCase):
 
         coin_data = self.api.get_coin_data('BTC')
 
-        assert len(coin_data._buy_transactions_data) == 1
-        buy_transaction = coin_data._buy_transactions_data[0]
+        assert len(coin_data.buy_transactions_data) == 1
+        buy_transaction = coin_data.buy_transactions_data[0]
         assert buy_transaction.cost == Decimal(100)
         assert buy_transaction.cost_per_unit == Decimal(10)
         assert buy_transaction.current_value_per_unit == Decimal(50)
@@ -364,8 +389,8 @@ class TestDataBaseAPI(TestCase):
 
         coin_data = self.api.get_coin_data('BTC')
 
-        assert len(coin_data._buy_transactions_data) == 1
-        buy_transaction = coin_data._buy_transactions_data[0]
+        assert len(coin_data.buy_transactions_data) == 1
+        buy_transaction = coin_data.buy_transactions_data[0]
         assert buy_transaction.cost == Decimal(100)
         assert buy_transaction.cost_per_unit == Decimal(10)
         assert buy_transaction.current_value_per_unit == Decimal(50)
@@ -410,8 +435,8 @@ class TestDataBaseAPI(TestCase):
 
         coin_data = self.api.get_coin_data('BTC')
 
-        assert len(coin_data._buy_transactions_data) == 1
-        buy_transaction = coin_data._buy_transactions_data[0]
+        assert len(coin_data.buy_transactions_data) == 1
+        buy_transaction = coin_data.buy_transactions_data[0]
         assert buy_transaction.spot_quantity == Decimal(3)
         assert buy_transaction.current_cost == Decimal(30)
         assert buy_transaction.cost == Decimal(100)
@@ -460,8 +485,8 @@ class TestDataBaseAPI(TestCase):
 
         coin_data = self.api.get_coin_data('BTC')
 
-        assert len(coin_data._buy_transactions_data) == 2
-        buy_transaction = coin_data._buy_transactions_data[0]
+        assert len(coin_data.buy_transactions_data) == 2
+        buy_transaction = coin_data.buy_transactions_data[0]
         assert buy_transaction.spot_quantity == Decimal(8)
         assert buy_transaction.current_cost == Decimal(80)
         assert buy_transaction.cost == Decimal(100)
@@ -494,8 +519,8 @@ class TestDataBaseAPI(TestCase):
 
         coin_data = self.api.get_coin_data('BTC')
 
-        assert len(coin_data._buy_transactions_data) == 2
-        buy_transaction = coin_data._buy_transactions_data[0]
+        assert len(coin_data.buy_transactions_data) == 2
+        buy_transaction = coin_data.buy_transactions_data[0]
         assert buy_transaction.spot_quantity == Decimal(0)
         assert buy_transaction.current_cost == Decimal(0)
         assert buy_transaction.cost == Decimal(100)
@@ -519,7 +544,7 @@ class TestDataBaseAPI(TestCase):
         self.assertAlmostEqual(buy_transaction.realized_gains_change_percentage, 3.0)
         assert buy_transaction.realized_gains_change_percentage_string == "300.00%"
 
-        buy_transaction = coin_data._buy_transactions_data[1]
+        buy_transaction = coin_data.buy_transactions_data[1]
         assert buy_transaction.spot_quantity == Decimal(3)
         assert buy_transaction.current_cost == Decimal(60)
         assert buy_transaction.cost == Decimal(100)
