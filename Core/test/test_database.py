@@ -32,7 +32,7 @@ class TestDataBaseAPI(TestCase):
     def setUp(self):
         self.db = DataBaseAPI.create_new_database('test')
         self.external_api = MockExternalAPI()
-        self.api = DataBaseAPI(self.external_api, self.db)
+        self.api = DataBaseAPI(self.db, self.external_api)
         self.validator = TransactionValidator(self.api)
 
     def _create_buy_proto_transaction(self, first, second, quantity, date, cost_per_coin):
@@ -68,7 +68,7 @@ class TestDataBaseAPI(TestCase):
 
     def test_create_API(self):
         db = DataBaseAPI.create_new_database('test')
-        api = DataBaseAPI(MockExternalAPI(), db)
+        api = DataBaseAPI(db, MockExternalAPI())
 
         assert isinstance(api, DataBaseAPI)
 
@@ -197,7 +197,7 @@ class TestDataBaseAPI(TestCase):
         self.api.active_processes = [self.api._compute_earnings]
         self.api.process_coin_data('BTC')
 
-        coin_data = self.api.get_coin_data('BTC')
+        coin_data = self.api._get_coin_data('BTC')
 
         assert len(coin_data.get_transactions([Transaction.TransactionType.BUY])) == 1
         assert len(coin_data.get_transactions([Transaction.TransactionType.SELL])) == 2
@@ -405,8 +405,8 @@ class TestDataBaseAPI(TestCase):
 
         assert len(buy_transaction.amortized_quantities) == 1
         amortized = buy_transaction.amortized_quantities[0]
-        assert amortized[0] == Decimal(5)
-        assert amortized[1] == Decimal(100)
+        assert amortized.quantity == Decimal(5)
+        assert amortized.total_value == Decimal(100)
         assert buy_transaction.total_amortized == Decimal(5)
         assert buy_transaction.total_amortized_value == Decimal(100)
         assert buy_transaction.unrealized_gains == Decimal(200)
@@ -451,11 +451,11 @@ class TestDataBaseAPI(TestCase):
 
         assert len(buy_transaction.amortized_quantities) == 2
         amortized = buy_transaction.amortized_quantities[0]
-        assert amortized[0] == Decimal(5)
-        assert amortized[1] == Decimal(100)
+        assert amortized.quantity == Decimal(5)
+        assert amortized.total_value == Decimal(100)
         amortized = buy_transaction.amortized_quantities[1]
-        assert amortized[0] == Decimal(2)
-        assert amortized[1] == Decimal(60)
+        assert amortized.quantity == Decimal(2)
+        assert amortized.total_value == Decimal(60)
         assert buy_transaction.total_amortized == Decimal(7)
         assert buy_transaction.total_amortized_value == Decimal(160)
         assert buy_transaction.unrealized_gains == Decimal(120)
@@ -533,8 +533,8 @@ class TestDataBaseAPI(TestCase):
 
         assert len(buy_transaction.amortized_quantities) == 1
         amortized = buy_transaction.amortized_quantities[0]
-        assert amortized[0] == Decimal(10)
-        assert amortized[1] == Decimal(300)
+        assert amortized.quantity == Decimal(10)
+        assert amortized.total_value == Decimal(300)
         assert buy_transaction.total_amortized == Decimal(10)
         assert buy_transaction.total_amortized_value == Decimal(300)
         assert buy_transaction.unrealized_gains == Decimal(0)
@@ -557,8 +557,8 @@ class TestDataBaseAPI(TestCase):
 
         assert len(buy_transaction.amortized_quantities) == 1
         amortized = buy_transaction.amortized_quantities[0]
-        assert amortized[0] == Decimal(2)
-        assert amortized[1] == Decimal(60)
+        assert amortized.quantity == Decimal(2)
+        assert amortized.total_value == Decimal(60)
         assert buy_transaction.total_amortized == Decimal(2)
         assert buy_transaction.total_amortized_value == Decimal(60)
         assert buy_transaction.unrealized_gains == Decimal(90)

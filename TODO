@@ -1,6 +1,9 @@
 TODO Things
 
-- Take into account fees in gains
+- Refactor compute methods
+- Take into account fees in gains - Refactor Fees and Earns?
+- Make print for BuyTransaction, Create a DataClass??
 
+- Design GUI
 - Make GUI
 - Handle Liquid Swap??

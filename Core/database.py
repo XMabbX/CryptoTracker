@@ -1,9 +1,8 @@
-from typing import Dict, List, Optional, Iterable, Tuple, Set
+from typing import Dict, List, Optional, Iterable, Set
 from decimal import Decimal
 from datetime import datetime
-from dataclasses import dataclass, field
 
-from .Dataclasses import Coin, Transaction
+from .Dataclasses import Coin, Transaction, CoinData, FeeData, CoinEarn, Amortization
 from .CoinAPIExternal import CoinAPI, APIBase
 from .Dataclasses import ProtoTransaction
 
@@ -36,136 +35,41 @@ EARN_OPERATIONS = (Transaction.TransactionType.SAVING_PURCHASE, Transaction.Tran
                    Transaction.TransactionType.SAVING_REDEMPTION, Transaction.TransactionType.POS_REDEMPTION)
 
 
-class CoinData:
+class BuyTransactionData:
 
-    def __init__(self, coin: Coin):
-        self.coin = coin
-
-        self.spot_quantity = None
-        self.earn_quantity = None
-
-        self.current_value_per_unit = None
-
-        self._transactions_groups: Dict[Transaction.TransactionType, List[Transaction]] = self._group_transactions()
-        self.fees_transactions: List[FeeData] = []
-        self.buy_transactions_data: List[BuyTransactionData] = []
-        self.coin_earn: Optional[CoinEarn] = None
-
-        self.current_average_cost = Decimal(0)
-
-    def _group_transactions(self):
-        transactions_groups = {x: [] for x in Transaction.TransactionType}
-
-        for trans in self.coin.transactions:
-            transactions_groups[trans.operation_type].append(trans)
-        return transactions_groups
-
-    def get_transactions(self, type_filter: Optional[Iterable[Transaction.TransactionType]] = None):
-        if type_filter is None:
-            return self.coin.transactions
-        else:
-            trans_list = []
-            for current_type in type_filter:
-                trans_list.extend(self._transactions_groups[current_type])
-            return trans_list
-
-    def get_buy_sell_transactions(self):
-        buy_sell_trans = self.get_transactions((Transaction.TransactionType.BUY, Transaction.TransactionType.SELL))
-        buy_sell_trans.sort(key=lambda x: x.UTC_Time)
-        return buy_sell_trans
-
-    def update_current_value(self, value):
-        self.current_value_per_unit = value
-
-    def _get_total_costs(self):
-        return sum(trans.cost for trans in self.buy_transactions_data)
-
-    def _get_total_current_cost(self):
-        return sum(trans.current_cost for trans in self.buy_transactions_data)
-
-    def _get_total_unrealized_gains(self):
-        return sum(trans.unrealized_gains for trans in self.buy_transactions_data)
-
-    def _get_current_total_value(self):
-        return sum(trans.unrealized_total_value for trans in self.buy_transactions_data)
-
-    def _get_total_realized_gains(self):
-        return sum(trans.realized_gains for trans in self.buy_transactions_data)
-
-    def _get_total_realized_value(self):
-        return sum(trans.total_amortized_value for trans in self.buy_transactions_data)
-
-    def print_status(self):
-        print(f"-------------------------------------------------------------------------------------------")
-        print(f"Coin info: {self.coin}")
-        if self.current_value_per_unit:
-            print(f"Current quantity in stock: {self.spot_quantity}; "
-                  f"Current value: {self.spot_quantity * self.current_value_per_unit}")
-            print(f"Current quantity in earn: {self.earn_quantity}; "
-                  f"Current value: {self.earn_quantity * self.current_value_per_unit}")
-        else:
-            print(f"Current quantity in stock: {self.spot_quantity}; Current value: Not available")
-            print(f"Current quantity in earn: {self.earn_quantity}; Current value: Not available")
-
-        total_cost_of_fees = Decimal(0)
-        for fee in self.fees_transactions:
-            total_cost_of_fees += fee.cost
-        print(f"Total quantity spent in fees: {total_cost_of_fees}€")
-        print(f"Total value earn:")
-        print(f"{self.coin_earn}")
-        print(f"Current earn coins: {self.coin_earn.current_quantity}")
-        print(f"Current earn value: {self.coin_earn.current_value}")
-        print(f"Total realized gains from earn coins: {self.coin_earn.realized_gains}")
-        print(f"Current average cost: {self.current_average_cost}")
-        print(
-            f"Change respect average cost: {((self.current_value_per_unit - self.current_average_cost) / self.current_average_cost):.2%}")
-
-        print(f"Buy transactions cost and gains")
-        for buy_trans in self.buy_transactions_data:
-            print(buy_trans)
-
-        print(f"Total costs: {self._get_total_costs()}")
-        print(f"Total current value: {self._get_current_total_value()}")
-        print(f"Total current costs: {self._get_total_current_cost()}")
-        print(f"Total unrealized gains: {self._get_total_unrealized_gains()}")
-        print(f"Total realized gains: {self._get_total_realized_gains()}")
-        print(f"Total realized value: {self._get_total_realized_value()}")
-
-
-@dataclass
-class TransactionData:
-    transaction: Transaction
-    cost_per_unit: Decimal
-    current_value_per_unit: Decimal
-
-    cost: Decimal = field(init=False)
-    current_value: Decimal = field(init=False)
-    change_percentage: float = field(init=False)
-    change_value: Decimal = field(init=False)
-    change_percentage_string: str = field(init=False)
-
-    def __post_init__(self):
+    def __init__(self, transaction: Transaction, cost_per_unit: Decimal, current_value_callback: callable):
+        self._current_value_per_unit_callback = current_value_callback
+        self.transaction = transaction
+        self.cost_per_unit = cost_per_unit
         self.cost = self.transaction.quantity * self.cost_per_unit
-        self.current_value = self.transaction.quantity * self.current_value_per_unit
-        self.change_value = self.current_value - self.cost
-        self.change_percentage = float(self.change_value / self.cost)
-        self.change_percentage_string = "{0:.2%}".format(self.change_percentage)
+        self.amortized_quantities: List[Amortization] = []
 
+    @property
+    def current_value_per_unit(self):
+        return self._current_value_per_unit_callback()
 
-@dataclass
-class BuyTransactionData(TransactionData):
-    amortized_quantities: List[Tuple[Decimal, Decimal]] = field(init=False)
+    @property
+    def current_value(self):
+        return self.transaction.quantity * self._current_value_per_unit_callback()
 
-    def __post_init__(self):
-        self.amortized_quantities = []
-        super().__post_init__()
+    @property
+    def change_value(self):
+        return self.current_value - self.cost
+
+    @property
+    def change_percentage(self):
+        return float(self.change_value / self.cost)
+
+    @property
+    def change_percentage_string(self):
+        return "{0:.2%}".format(self.change_percentage)
 
     @property
     def spot_quantity(self):
         # Change name because this is not spot it is all quantity
         if not self.amortized_quantities:
             return self.transaction.quantity
-        return self.transaction.quantity - sum(x[0] for x in self.amortized_quantities)
+        return self.transaction.quantity - sum(x.quantity for x in self.amortized_quantities)
 
     @property
     def current_cost(self):
@@ -175,13 +79,13 @@ class BuyTransactionData(TransactionData):
     def total_amortized(self):
         if not self.amortized_quantities:
             return Decimal(0)
-        return sum(x[0] for x in self.amortized_quantities)
+        return sum(x.quantity for x in self.amortized_quantities)
 
     @property
     def total_amortized_value(self):
         if not self.amortized_quantities:
             return Decimal(0)
-        return sum(x[1] for x in self.amortized_quantities)
+        return sum(x.total_value for x in self.amortized_quantities)
 
     @property
     def unrealized_total_value(self):
@@ -228,57 +132,96 @@ class BuyTransactionData(TransactionData):
         return "{0:.2%}".format(self.realized_gains_change_percentage)
 
     def add_amortized(self, quantity: Decimal, total_value: Decimal):
-        self.amortized_quantities.append((quantity, total_value))
+        self.amortized_quantities.append(Amortization(quantity, total_value))
 
 
-@dataclass
-class FeeData:
-    transaction: Transaction
-    cost_per_unit: Decimal
+class _CoinData:
 
-    cost: Decimal = field(init=False)
+    def __init__(self, coin: Coin):
+        self._coin: Coin = coin
 
-    def __post_init__(self):
-        self.cost = self.transaction.quantity * self.cost_per_unit
+        self._current_value_per_unit: Optional[Decimal] = None
 
+        self.spot_quantity: Optional[Decimal] = None
+        self.earn_quantity: Optional[Decimal] = None
 
-@dataclass
-class CoinEarn:
-    coin: Coin
-    total_earn_quantity: Decimal
+        self._transactions_groups: Dict[Transaction.TransactionType, List[Transaction]] = self._group_transactions()
 
-    total_current_value: Decimal = field(init=False)
-    current_conversion_rate: Decimal = field(init=False)
+        self.fees_transactions: List[FeeData] = []
+        self.buy_transactions_data: List[BuyTransactionData] = []
+        self.coin_earn: Optional[CoinEarn] = None
 
-    amortized_quantities: List[Tuple[Decimal, Decimal]] = field(init=False)
+        self.current_average_cost = Decimal(0)
 
-    def __post_init__(self):
-        self.amortized_quantities = []
+    def get_coin_tick(self):
+        return self._coin.coin_info.tick
 
-    def update_current_conversion_rate(self, conversion_rate):
-        self.current_conversion_rate = conversion_rate
-        self.total_current_value = self.current_conversion_rate * self.total_earn_quantity
+    def get_current_value_per_unit(self) -> Decimal:
+        return self._current_value_per_unit
 
-    def add_amortized(self, quantity: Decimal, total_value: Decimal):
-        self.amortized_quantities.append((quantity, total_value))
+    def update_current_value_per_unit(self, value: Decimal):
+        self._current_value_per_unit = value
 
-    @property
-    def current_quantity(self):
-        return self.total_earn_quantity - sum(x[0] for x in self.amortized_quantities)
+    def get_transactions(self, type_filter: Optional[Iterable[Transaction.TransactionType]] = None):
+        if type_filter is None:
+            return self._coin.transactions
+        else:
+            trans_list = []
+            for current_type in type_filter:
+                trans_list.extend(self._transactions_groups[current_type])
+            return trans_list
 
-    @property
-    def current_value(self):
-        return self.current_quantity * self.current_conversion_rate
+    def get_buy_sell_transactions(self):
+        buy_sell_trans = self.get_transactions((Transaction.TransactionType.BUY, Transaction.TransactionType.SELL))
+        buy_sell_trans.sort(key=lambda x: x.UTC_Time)
+        return buy_sell_trans
 
-    @property
-    def realized_gains(self):
-        return sum(x[1] for x in self.amortized_quantities)
+    def create_coin_earn(self):
+        return CoinEarn(self._coin, Decimal(0))
+
+    def get_frozen_coin_data(self) -> CoinData:
+        return CoinData(coin=self._coin, spot_quantity=self.spot_quantity, earn_quantity=self.earn_quantity,
+                        current_value_per_unit=self._current_value_per_unit,
+                        current_average_cost=self.current_average_cost, total_costs=self._get_total_costs(),
+                        total_current_cost=self._get_total_current_cost(),
+                        total_unrealized_gains=self._get_total_unrealized_gains(),
+                        current_total_value=self._get_current_total_value(),
+                        total_realized_gains=self._get_total_realized_gains(),
+                        total_realized_value=self._get_total_realized_value(),
+                        buy_transactions_data=self.buy_transactions_data,
+                        fees_transactions=self.fees_transactions,
+                        coin_earn=self.coin_earn)
+
+    def _group_transactions(self):
+        transactions_groups = {x: [] for x in Transaction.TransactionType}
+
+        for trans in self._coin.transactions:
+            transactions_groups[trans.operation_type].append(trans)
+        return transactions_groups
+
+    def _get_total_costs(self):
+        return sum(trans.cost for trans in self.buy_transactions_data)
+
+    def _get_total_current_cost(self):
+        return sum(trans.current_cost for trans in self.buy_transactions_data)
+
+    def _get_total_unrealized_gains(self):
+        return sum(trans.unrealized_gains for trans in self.buy_transactions_data)
+
+    def _get_current_total_value(self):
+        return sum(trans.unrealized_total_value for trans in self.buy_transactions_data)
+
+    def _get_total_realized_gains(self):
+        return sum(trans.realized_gains for trans in self.buy_transactions_data)
+
+    def _get_total_realized_value(self):
+        return sum(trans.total_amortized_value for trans in self.buy_transactions_data)
 
 
 class DataBase:
     name: str
     holdings: Dict[str, Coin]
-    holdings_data: Dict[str, CoinData]
+    holdings_data: Dict[str, _CoinData]
     transactions: Dict[str, Transaction]
 
 
@@ -371,10 +314,8 @@ class TransactionValidator:
 class DataBaseAPI:
     NowPrecision = NowPrecision
 
-    def __init__(self, external_api: APIBase, database=None, return_fiat='EUR',
+    def __init__(self, database: DataBase, external_api: APIBase, return_fiat='EUR',
                  now_precision: NowPrecision = NowPrecision.M15):
-        if database is None or not isinstance(database, DataBase):
-            raise ValueError("A database must exist")
         self._database = database
         self._external_api = external_api
         self._return_fiat = return_fiat
@@ -439,6 +380,9 @@ class DataBaseAPI:
         return self._database.holdings[coin_name]
 
     def get_coin_data(self, coin_name: str) -> CoinData:
+        return self._database.holdings_data[coin_name].get_frozen_coin_data()
+
+    def _get_coin_data(self, coin_name: str) -> _CoinData:
         return self._database.holdings_data[coin_name]
 
     def add_transaction(self, transaction: [Transaction, List[Transaction]]):
@@ -478,14 +422,18 @@ class DataBaseAPI:
             self.process_all_coins_data()
         else:
             coin_data = self._get_or_create_coin_data(coin_tick)
+            conversion_rate = self._external_api.get_conversion_rate(coin_data.get_coin_tick(),
+                                                                     self._return_fiat,
+                                                                     self._get_now_time())
+            coin_data.update_current_value_per_unit(conversion_rate)
             for process in self.active_processes:
                 process(coin_data)
 
-    def _get_or_create_coin_data(self, coin_tick):
+    def _get_or_create_coin_data(self, coin_tick: str):
         try:
-            coin_data = self.get_coin_data(coin_tick)
+            coin_data = self._get_coin_data(coin_tick)
         except KeyError:
-            coin_data = CoinData(self.get_coin(coin_tick))
+            coin_data = _CoinData(self.get_coin(coin_tick))
             self._database.holdings_data[coin_tick] = coin_data
         return coin_data
 
@@ -498,56 +446,52 @@ class DataBaseAPI:
                 continue
             self.process_coin_data(coin_tick)
 
-    def _compute_current_value_per_coin(self, coin_data: CoinData):
-        coin_data.update_current_value(self._external_api.get_conversion_rate(coin_data.coin.coin_info.tick,
-                                                                              self._return_fiat,
-                                                                              self._get_now_time()))
+    def _compute_current_value_per_coin(self, coin_data: _CoinData):
+        coin_data.update_current_value_per_unit(self._external_api.get_conversion_rate(coin_data.get_coin_tick(),
+                                                                                       self._return_fiat,
+                                                                                       self._get_now_time()))
 
-    def _compute_spot_quantities(self, coin_data: CoinData):
+    def _compute_spot_quantities(self, coin_data: _CoinData):
         value = Decimal(0)
-        for trans in coin_data.coin.transactions:
+        for trans in coin_data.get_transactions():
             value += trans.quantity
         coin_data.spot_quantity = value
 
-    def _compute_earn_quantities(self, coin_data: CoinData):
+    def _compute_earn_quantities(self, coin_data: _CoinData):
         value = Decimal(0)
-        for trans in coin_data.coin.transactions:
+        for trans in coin_data.get_transactions():
             if trans.operation_type in EARN_OPERATIONS:
                 value -= trans.quantity
         coin_data.earn_quantity = value
 
-    def _compute_fees_quantities(self, coin_data: CoinData):
+    def _compute_fees_quantities(self, coin_data: _CoinData):
         list_trans = []
         for trans in coin_data.get_transactions((Transaction.TransactionType.FEE,)):
             cost_per_unit = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
                                                                    self._return_fiat,
                                                                    trans.UTC_Time)
-
             list_trans.append(FeeData(trans, cost_per_unit))
 
         coin_data.fees_transactions = list_trans
 
-    def _compute_earnings(self, coin_data: CoinData):
+    def _compute_earnings(self, coin_data: _CoinData):
         list_trans_to_process = coin_data.get_transactions((Transaction.TransactionType.POS_INTEREST,
                                                             Transaction.TransactionType.SAVING_INTEREST))
-        coin_earn = CoinEarn(coin_data.coin, Decimal(0))
+        coin_earn = coin_data.create_coin_earn()
         for trans in list_trans_to_process:
             coin_earn.total_earn_quantity += trans.quantity
 
-        conversion_rate = self._external_api.get_conversion_rate(coin_data.coin.coin_info.tick,
-                                                                 self._return_fiat,
-                                                                 self._get_now_time())
-        coin_earn.update_current_conversion_rate(conversion_rate)
+        coin_earn.update_current_conversion_rate(coin_data.get_current_value_per_unit())
         coin_data.coin_earn = coin_earn
 
-    def _compute_gains(self, coin_data: CoinData):
+    def _compute_gains(self, coin_data: _CoinData):
         buy_transactions: List[BuyTransactionData] = []
 
         list_trans_to_process = coin_data.get_buy_sell_transactions()
 
         for trans in list_trans_to_process:
             if trans.operation_type is Transaction.TransactionType.BUY:
-                buy_transactions.append(self._create_buy_transaction(trans))
+                buy_transactions.append(self._create_buy_transaction(coin_data, trans))
             elif trans.operation_type is Transaction.TransactionType.SELL:
                 sell_quantity = trans.quantity
                 # We want to be positive
@@ -574,11 +518,11 @@ class DataBaseAPI:
             coin_data.current_average_cost = sum_costs / sum_quantities
             coin_data.buy_transactions_data = buy_transactions
 
-    def _amortize_earn_coins(self, coin_data: CoinData, sell_quantity: Decimal, trans: Transaction):
+    def _amortize_earn_coins(self, coin_data: _CoinData, sell_quantity: Decimal, trans: Transaction):
         if not coin_data.coin_earn:
-            raise ValueError(f"Not earn data for coin {coin_data.coin.coin_info.tick}")
+            raise ValueError(f"Not earn data for coin {coin_data.get_coin_tick()}")
         if sell_quantity > coin_data.coin_earn.current_quantity:
-            raise ValueError(f"Not enough earn coins {coin_data.coin.coin_info.tick} to sell")
+            raise ValueError(f"Not enough earn coins {coin_data.get_coin_tick()} to sell")
 
         sell_value = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
                                                             self._return_fiat,
@@ -591,14 +535,9 @@ class DataBaseAPI:
                                                             trans.UTC_Time)
         buy_transaction.add_amortized(sell_quantity, sell_value * sell_quantity)
 
-    def _create_buy_transaction(self, trans: Transaction):
-        cost = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
+    def _create_buy_transaction(self, coin_data: _CoinData, trans: Transaction):
+        cost = self._external_api.get_conversion_rate(coin_data.get_coin_tick(),
                                                       self._return_fiat,
                                                       trans.UTC_Time)
-        current_value = self._external_api.get_conversion_rate(trans.coin.coin_info.tick,
-                                                               self._return_fiat,
-                                                               self._get_now_time())
-        new_data = BuyTransactionData(transaction=trans,
-                                      cost_per_unit=cost,
-                                      current_value_per_unit=current_value)
-        return new_data
+        return BuyTransactionData(transaction=trans, cost_per_unit=cost,
+                                  current_value_callback=coin_data.get_current_value_per_unit)
