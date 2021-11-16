@@ -192,7 +192,7 @@ class BuyTransactionData:
 
     @property
     def current_value(self):
-        return self.transaction.quantity * self._current_value_per_unit_callback()
+        return self.transaction.quantity * self.current_value_per_unit
 
     @property
     def change_value(self):

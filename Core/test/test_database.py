@@ -32,7 +32,7 @@ class TestDataBaseAPI(TestCase):
     def setUp(self):
         self.db = DataBaseAPI.create_new_database('test')
         self.external_api = MockExternalAPI()
-        self.api = DataBaseAPI(self.db, self.external_api)
+        self.api: DataBaseAPI = DataBaseAPI(self.db, self.external_api)
         self.validator = TransactionValidator(self.api)
 
     def _create_buy_proto_transaction(self, first, second, quantity, date, cost_per_coin):
@@ -169,7 +169,11 @@ class TestDataBaseAPI(TestCase):
         proto1 = self._create_buy_proto_transaction('BTC', 'EUR', Decimal(10), time, Decimal(1))
         valid_transactions = self.validator.validate_and_parse_transactions([proto1])
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = []
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_EARNINGS = False
+        self.api.COMPUTE_GAINS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api.get_coin_data('BTC')
@@ -194,7 +198,10 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_earnings]
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_GAINS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api._get_coin_data('BTC')
@@ -215,7 +222,11 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions([proto1])
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_current_value_per_coin]
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_EARNINGS = False
+        self.api.COMPUTE_GAINS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api.get_coin_data('BTC')
@@ -234,7 +245,10 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_spot_quantities]
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_EARNINGS = False
+        self.api.COMPUTE_GAINS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api.get_coin_data('BTC')
@@ -254,7 +268,9 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_spot_quantities, self.api._compute_earn_quantities]
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_EARNINGS = False
+        self.api.COMPUTE_GAINS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api.get_coin_data('BTC')
@@ -275,7 +291,10 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_fees_quantities]
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_EARNINGS = False
+        self.api.COMPUTE_GAINS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api.get_coin_data('BTC')
@@ -301,7 +320,10 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_earnings]
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_GAINS = False
         self.api.process_coin_data('BTC')
 
         coin_earn = self.api.get_coin_data('BTC').coin_earn
@@ -325,7 +347,9 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_earnings, self.api._compute_gains]
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
         self.api.process_coin_data('BTC')
 
         coin_earn = self.api.get_coin_data('BTC').coin_earn
@@ -343,7 +367,10 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_gains]
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_EARNINGS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api.get_coin_data('BTC')
@@ -383,7 +410,10 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_gains]
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_EARNINGS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api.get_coin_data('BTC')
@@ -429,7 +459,10 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_gains]
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_EARNINGS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api.get_coin_data('BTC')
@@ -479,7 +512,10 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_gains]
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_EARNINGS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api.get_coin_data('BTC')
@@ -513,7 +549,10 @@ class TestDataBaseAPI(TestCase):
 
         valid_transactions = self.validator.validate_and_parse_transactions(proto_list)
         self.api.add_transaction(valid_transactions)
-        self.api.active_processes = [self.api._compute_gains]
+        self.api.COMPUTE_SPOT_QUANTITIES = False
+        self.api.COMPUTE_EARN_QUANTITIES = False
+        self.api.COMPUTE_FEES_QUANTITIES = False
+        self.api.COMPUTE_EARNINGS = False
         self.api.process_coin_data('BTC')
 
         coin_data = self.api.get_coin_data('BTC')
