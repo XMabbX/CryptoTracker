@@ -280,11 +280,10 @@ class TestDataBaseAPI(TestCase):
 
         coin_data = self.api.get_coin_data('BTC')
 
-        assert len(coin_data.fees_transactions) == 1
-        fee_trans = coin_data.fees_transactions[0]
-        assert fee_trans.transaction.quantity == Decimal(-1)
-        assert fee_trans.cost_per_unit == Decimal(10)
-        assert fee_trans.cost == Decimal(-10)
+        assert coin_data.fees_data.total_cost == Decimal(-10)
+        assert len(coin_data.fees_data.transactions_list) == 1
+        assert coin_data.fees_data.total_quantity == Decimal(-1)
+        assert coin_data.fees_data.transactions_list[0].cost_per_unit == Decimal(10)
 
     def test_coin_data_earnings(self):
         time_start = datetime.now() - timedelta(days=10)
