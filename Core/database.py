@@ -126,13 +126,6 @@ class DataBase:
     transactions: Dict[str, Transaction]
 
 
-class NowPrecision:
-    M1 = '1Minute'
-    M15 = '15Minute'
-    M30 = '30Minute'
-    H1 = '1Hour'
-
-
 class TransactionValidator:
 
     def __init__(self, database: 'DataBaseAPI', duplicates_cache_path: str = None):
@@ -213,10 +206,14 @@ class TransactionValidator:
 
 
 class DataBaseAPI:
-    NowPrecision = NowPrecision
+    class Precision:
+        M1 = '1Minute'
+        M15 = '15Minute'
+        M30 = '30Minute'
+        H1 = '1Hour'
 
     def __init__(self, database: DataBase, external_api: APIBase, return_fiat='EUR',
-                 now_precision: NowPrecision = NowPrecision.M15):
+                 now_precision: Precision = Precision.M15):
         self._database = database
         self._external_api = external_api
         self._return_fiat = return_fiat
@@ -307,15 +304,15 @@ class DataBaseAPI:
 
     def _get_now_time(self) -> datetime:
         now_full = datetime.now()
-        if self._now_precision == NowPrecision.H1:
+        if self._now_precision == self.Precision.H1:
             return datetime(now_full.year, now_full.month, now_full.day, now_full.hour)
-        elif self._now_precision == NowPrecision.M30:
+        elif self._now_precision == self.Precision.M30:
             minutes = 30 if now_full.minute >= 30 else 0
             return datetime(now_full.year, now_full.month, now_full.day, now_full.hour, minutes)
-        elif self._now_precision == NowPrecision.M15:
+        elif self._now_precision == self.Precision.M15:
             minutes = int(now_full.minute / 15) * 15
             return datetime(now_full.year, now_full.month, now_full.day, now_full.hour, minutes)
-        elif self._now_precision == NowPrecision.M1:
+        elif self._now_precision == self.Precision.M1:
             return datetime(now_full.year, now_full.month, now_full.day, now_full.hour, now_full.minute)
 
     def process_coin_data(self, coin_tick: Optional[str] = None):
