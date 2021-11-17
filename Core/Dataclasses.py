@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 from enum import Enum
 from decimal import Decimal
 from datetime import datetime
@@ -75,6 +75,30 @@ class Coin:
 
 
 @dataclass(frozen=True)
+class BuyTransactionData:
+    transaction: Transaction = field(repr=False)
+    cost_per_unit: Decimal
+    cost: Decimal
+    current_value_per_unit: Decimal
+    current_value: Decimal
+    change_value: Decimal
+    change_percentage: float
+    change_percentage_string: str
+    current_quantity: Decimal
+    current_cost: Decimal
+    total_amortized: Decimal
+    total_amortized_value: Decimal
+    unrealized_total_value: Decimal
+    unrealized_gains: Decimal
+    unrealized_gains_change_percentage: float
+    unrealized_gains_change_percentage_str: str
+    realized_gains: Decimal
+    realized_gains_change_percentage: float
+    realized_gains_change_percentage_str: str
+    amortized: Optional[List['Amortization']] = None
+
+
+@dataclass(frozen=True)
 class CoinData:
     coin: Coin
     spot_quantity: Decimal
@@ -88,9 +112,9 @@ class CoinData:
     total_realized_gains: Decimal
     total_realized_value: Decimal
 
-    buy_transactions_data: List['BuyTransactionData']
     fees_data: 'FeeData'
     coin_earn: 'CoinEarn'
+    buy_transactions_data: Optional[List['BuyTransactionData']] = None
 
     def print_status(self):
         print(f"-------------------------------------------------------------------------------------------")
@@ -175,106 +199,6 @@ class CoinEarn:
     @property
     def realized_gains(self):
         return sum(x.total_value for x in self.amortized_quantities)
-
-
-class BuyTransactionData:
-
-    def __init__(self, transaction: Transaction, cost_per_unit: Decimal, current_value_callback: callable):
-        self._current_value_per_unit_callback = current_value_callback
-        self.transaction = transaction
-        self.cost_per_unit = cost_per_unit
-        self.cost = self.transaction.quantity * self.cost_per_unit
-        self.amortized_quantities: List[Amortization] = []
-
-    @property
-    def current_value_per_unit(self):
-        return self._current_value_per_unit_callback()
-
-    @property
-    def current_value(self):
-        return self.transaction.quantity * self.current_value_per_unit
-
-    @property
-    def change_value(self):
-        return self.current_value - self.cost
-
-    @property
-    def change_percentage(self):
-        return float(self.change_value / self.cost)
-
-    @property
-    def change_percentage_string(self):
-        return "{0:.2%}".format(self.change_percentage)
-
-    @property
-    def spot_quantity(self):
-        # Change name because this is not spot it is all quantity
-        if not self.amortized_quantities:
-            return self.transaction.quantity
-        return self.transaction.quantity - sum(x.quantity for x in self.amortized_quantities)
-
-    @property
-    def current_cost(self):
-        return self.spot_quantity * self.cost_per_unit
-
-    @property
-    def total_amortized(self):
-        if not self.amortized_quantities:
-            return Decimal(0)
-        return sum(x.quantity for x in self.amortized_quantities)
-
-    @property
-    def total_amortized_value(self):
-        if not self.amortized_quantities:
-            return Decimal(0)
-        return sum(x.total_value for x in self.amortized_quantities)
-
-    @property
-    def unrealized_total_value(self):
-        current_quantity = self.spot_quantity
-        if not current_quantity > 0:
-            return Decimal(0)
-        return current_quantity * self.current_value_per_unit
-
-    @property
-    def unrealized_gains(self):
-        current_quantity = self.spot_quantity
-        if not current_quantity > 0:
-            return Decimal(0)
-
-        return (current_quantity * self.current_value_per_unit) - (current_quantity * self.cost_per_unit)
-
-    @property
-    def unrealized_gains_change_percentage(self):
-        current_quantity = self.spot_quantity
-        if not current_quantity > 0:
-            return 0.0
-
-        return float(self.unrealized_gains / (current_quantity * self.cost_per_unit))
-
-    @property
-    def unrealized_gains_change_percentage_string(self):
-        return "{0:.2%}".format(self.unrealized_gains_change_percentage)
-
-    @property
-    def realized_gains(self):
-        if not self.amortized_quantities:
-            return Decimal(0)
-        return self.total_amortized_value - (self.total_amortized * self.cost_per_unit)
-
-    @property
-    def realized_gains_change_percentage(self):
-        if not self.amortized_quantities:
-            return 0.0
-
-        return float(self.total_amortized_value / (self.total_amortized * self.cost_per_unit))
-
-    @property
-    def realized_gains_change_percentage_string(self):
-        return "{0:.2%}".format(self.realized_gains_change_percentage)
-
-    def add_amortized(self, quantity: Decimal, total_value: Decimal):
-        self.amortized_quantities.append(Amortization(quantity, total_value))
 
 
 class FeeData:

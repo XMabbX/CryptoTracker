@@ -373,7 +373,7 @@ class TestDataBaseAPI(TestCase):
         self.api.COMPUTE_EARNINGS = False
         self.api.process_coin_data('BTC')
 
-        coin_data = self.api.get_coin_data('BTC')
+        coin_data = self.api.get_coin_data('BTC', True)
 
         assert len(coin_data.buy_transactions_data) == 1
         buy_transaction = coin_data.buy_transactions_data[0]
@@ -385,19 +385,19 @@ class TestDataBaseAPI(TestCase):
         assert buy_transaction.change_percentage == Decimal(4)
         assert buy_transaction.change_percentage_string == "400.00%"
         assert buy_transaction.current_cost == Decimal(100)
-        assert buy_transaction.spot_quantity == Decimal(10)
+        assert buy_transaction.current_quantity == Decimal(10)
 
         assert coin_data.current_average_cost == Decimal(10)
 
-        assert len(buy_transaction.amortized_quantities) == 0
+        assert len(buy_transaction.amortized) == 0
         assert buy_transaction.total_amortized == Decimal(0)
         assert buy_transaction.total_amortized_value == Decimal(0)
         assert buy_transaction.unrealized_gains == Decimal(400)
         assert buy_transaction.unrealized_gains_change_percentage == 4
-        assert buy_transaction.unrealized_gains_change_percentage_string == "400.00%"
+        assert buy_transaction.unrealized_gains_change_percentage_str == "400.00%"
         assert buy_transaction.realized_gains == Decimal(0)
         assert buy_transaction.realized_gains_change_percentage == 0.0
-        assert buy_transaction.realized_gains_change_percentage_string == "0.00%"
+        assert buy_transaction.realized_gains_change_percentage_str == "0.00%"
 
     def test_coin_data_gains_single_buy_single_sell(self):
         time_start = datetime.now() - timedelta(days=10)
@@ -416,7 +416,7 @@ class TestDataBaseAPI(TestCase):
         self.api.COMPUTE_EARNINGS = False
         self.api.process_coin_data('BTC')
 
-        coin_data = self.api.get_coin_data('BTC')
+        coin_data = self.api.get_coin_data('BTC', full=True)
 
         assert len(coin_data.buy_transactions_data) == 1
         buy_transaction = coin_data.buy_transactions_data[0]
@@ -427,23 +427,23 @@ class TestDataBaseAPI(TestCase):
         assert buy_transaction.change_value == Decimal(400)
         assert buy_transaction.change_percentage == Decimal(4)
         assert buy_transaction.change_percentage_string == "400.00%"
-        assert buy_transaction.spot_quantity == Decimal(5)
+        assert buy_transaction.current_quantity == Decimal(5)
         assert buy_transaction.current_cost == Decimal(50)
 
         assert coin_data.current_average_cost == Decimal(10)
 
-        assert len(buy_transaction.amortized_quantities) == 1
-        amortized = buy_transaction.amortized_quantities[0]
+        assert len(buy_transaction.amortized) == 1
+        amortized = buy_transaction.amortized[0]
         assert amortized.quantity == Decimal(5)
         assert amortized.total_value == Decimal(100)
         assert buy_transaction.total_amortized == Decimal(5)
         assert buy_transaction.total_amortized_value == Decimal(100)
         assert buy_transaction.unrealized_gains == Decimal(200)
         assert buy_transaction.unrealized_gains_change_percentage == 4.0
-        assert buy_transaction.unrealized_gains_change_percentage_string == "400.00%"
+        assert buy_transaction.unrealized_gains_change_percentage_str == "400.00%"
         assert buy_transaction.realized_gains == Decimal(50)
         self.assertAlmostEqual(buy_transaction.realized_gains_change_percentage, 2.0)
-        assert buy_transaction.realized_gains_change_percentage_string == "200.00%"
+        assert buy_transaction.realized_gains_change_percentage_str == "200.00%"
 
     def test_coin_data_gains_single_buy_multiple_sell(self):
         time_start = datetime.now() - timedelta(days=10)
@@ -465,11 +465,11 @@ class TestDataBaseAPI(TestCase):
         self.api.COMPUTE_EARNINGS = False
         self.api.process_coin_data('BTC')
 
-        coin_data = self.api.get_coin_data('BTC')
+        coin_data = self.api.get_coin_data('BTC', full=True)
 
         assert len(coin_data.buy_transactions_data) == 1
         buy_transaction = coin_data.buy_transactions_data[0]
-        assert buy_transaction.spot_quantity == Decimal(3)
+        assert buy_transaction.current_quantity == Decimal(3)
         assert buy_transaction.current_cost == Decimal(30)
         assert buy_transaction.cost == Decimal(100)
         assert buy_transaction.cost_per_unit == Decimal(10)
@@ -481,21 +481,21 @@ class TestDataBaseAPI(TestCase):
 
         assert coin_data.current_average_cost == Decimal(10)
 
-        assert len(buy_transaction.amortized_quantities) == 2
-        amortized = buy_transaction.amortized_quantities[0]
+        assert len(buy_transaction.amortized) == 2
+        amortized = buy_transaction.amortized[0]
         assert amortized.quantity == Decimal(5)
         assert amortized.total_value == Decimal(100)
-        amortized = buy_transaction.amortized_quantities[1]
+        amortized = buy_transaction.amortized[1]
         assert amortized.quantity == Decimal(2)
         assert amortized.total_value == Decimal(60)
         assert buy_transaction.total_amortized == Decimal(7)
         assert buy_transaction.total_amortized_value == Decimal(160)
         assert buy_transaction.unrealized_gains == Decimal(120)
         assert buy_transaction.unrealized_gains_change_percentage == 4.0
-        assert buy_transaction.unrealized_gains_change_percentage_string == "400.00%"
+        assert buy_transaction.unrealized_gains_change_percentage_str == "400.00%"
         assert buy_transaction.realized_gains == Decimal(90)
         self.assertAlmostEqual(buy_transaction.realized_gains_change_percentage, 2.285714285714286)
-        assert buy_transaction.realized_gains_change_percentage_string == "228.57%"
+        assert buy_transaction.realized_gains_change_percentage_str == "228.57%"
 
     def test_coin_data_gains_multiple_buy_single_sell_smaller(self):
         time_start = datetime.now() - timedelta(days=10)
@@ -522,7 +522,7 @@ class TestDataBaseAPI(TestCase):
 
         assert len(coin_data.buy_transactions_data) == 2
         buy_transaction = coin_data.buy_transactions_data[0]
-        assert buy_transaction.spot_quantity == Decimal(8)
+        assert buy_transaction.current_quantity == Decimal(8)
         assert buy_transaction.current_cost == Decimal(80)
         assert buy_transaction.cost == Decimal(100)
         assert buy_transaction.cost_per_unit == Decimal(10)
@@ -555,11 +555,11 @@ class TestDataBaseAPI(TestCase):
         self.api.COMPUTE_EARNINGS = False
         self.api.process_coin_data('BTC')
 
-        coin_data = self.api.get_coin_data('BTC')
+        coin_data = self.api.get_coin_data('BTC', full=True)
 
         assert len(coin_data.buy_transactions_data) == 2
         buy_transaction = coin_data.buy_transactions_data[0]
-        assert buy_transaction.spot_quantity == Decimal(0)
+        assert buy_transaction.current_quantity == Decimal(0)
         assert buy_transaction.current_cost == Decimal(0)
         assert buy_transaction.cost == Decimal(100)
         assert buy_transaction.cost_per_unit == Decimal(10)
@@ -569,21 +569,21 @@ class TestDataBaseAPI(TestCase):
         assert buy_transaction.change_percentage == Decimal(4)
         assert buy_transaction.change_percentage_string == "400.00%"
 
-        assert len(buy_transaction.amortized_quantities) == 1
-        amortized = buy_transaction.amortized_quantities[0]
+        assert len(buy_transaction.amortized) == 1
+        amortized = buy_transaction.amortized[0]
         assert amortized.quantity == Decimal(10)
         assert amortized.total_value == Decimal(300)
         assert buy_transaction.total_amortized == Decimal(10)
         assert buy_transaction.total_amortized_value == Decimal(300)
         assert buy_transaction.unrealized_gains == Decimal(0)
         assert buy_transaction.unrealized_gains_change_percentage == 0.0
-        assert buy_transaction.unrealized_gains_change_percentage_string == "0.00%"
+        assert buy_transaction.unrealized_gains_change_percentage_str == "0.00%"
         assert buy_transaction.realized_gains == Decimal(200)
         self.assertAlmostEqual(buy_transaction.realized_gains_change_percentage, 3.0)
-        assert buy_transaction.realized_gains_change_percentage_string == "300.00%"
+        assert buy_transaction.realized_gains_change_percentage_str == "300.00%"
 
         buy_transaction = coin_data.buy_transactions_data[1]
-        assert buy_transaction.spot_quantity == Decimal(3)
+        assert buy_transaction.current_quantity == Decimal(3)
         assert buy_transaction.current_cost == Decimal(60)
         assert buy_transaction.cost == Decimal(100)
         assert buy_transaction.cost_per_unit == Decimal(20)
@@ -593,17 +593,17 @@ class TestDataBaseAPI(TestCase):
         assert buy_transaction.change_percentage == Decimal(1.5)
         assert buy_transaction.change_percentage_string == "150.00%"
 
-        assert len(buy_transaction.amortized_quantities) == 1
-        amortized = buy_transaction.amortized_quantities[0]
+        assert len(buy_transaction.amortized) == 1
+        amortized = buy_transaction.amortized[0]
         assert amortized.quantity == Decimal(2)
         assert amortized.total_value == Decimal(60)
         assert buy_transaction.total_amortized == Decimal(2)
         assert buy_transaction.total_amortized_value == Decimal(60)
         assert buy_transaction.unrealized_gains == Decimal(90)
         assert buy_transaction.unrealized_gains_change_percentage == 1.5
-        assert buy_transaction.unrealized_gains_change_percentage_string == "150.00%"
+        assert buy_transaction.unrealized_gains_change_percentage_str == "150.00%"
         assert buy_transaction.realized_gains == Decimal(20)
         self.assertAlmostEqual(buy_transaction.realized_gains_change_percentage, 1.5)
-        assert buy_transaction.realized_gains_change_percentage_string == "150.00%"
+        assert buy_transaction.realized_gains_change_percentage_str == "150.00%"
 
         self.assertAlmostEqual(float(coin_data.current_average_cost), 20)
