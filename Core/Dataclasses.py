@@ -95,7 +95,7 @@ class BuyTransactionData:
     realized_gains: Decimal
     realized_gains_change_percentage: float
     realized_gains_change_percentage_str: str
-    amortized: Optional[List['Amortization']] = None
+    amortized: Optional[List['Amortization']] = field(repr=False, default=None)
 
 
 @dataclass(frozen=True)
@@ -172,7 +172,7 @@ class CoinEarn:
     total_earn_quantity: Decimal
 
     current_conversion_rate: Decimal = field(init=False)
-    amortized_quantities: List[Amortization] = field(init=False)
+    amortized_quantities: List[Amortization] = field(init=False, repr=False)
 
     def __post_init__(self):
         self.amortized_quantities = []

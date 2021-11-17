@@ -1,7 +1,7 @@
 TODO Things
 
 - Take into account fees in gains - Refactor Fees and Earns?
-- Make print for BuyTransaction, Create a DataClass??
+- Make Earn and Fees Data class??
 
 - Design GUI - WIP
 - Make GUI

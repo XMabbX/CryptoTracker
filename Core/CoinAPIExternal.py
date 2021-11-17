@@ -73,10 +73,11 @@ class BinanceAPI(APIBase):
 
     class PriceHistoryDatabase:
 
-        def __init__(self, path: Path, request_callback: Callable[[str, datetime], str]):
+        def __init__(self, path: Path, request_callback: Callable[[str, datetime], Decimal], verbose: bool):
             self._cache_path = path
             self._cached_data = {}
             self._request_price = request_callback
+            self._verbose = verbose
 
             self._load_cached_data()
 
@@ -90,12 +91,13 @@ class BinanceAPI(APIBase):
                 return None
 
             with self._cache_path.open('r') as f:
-                print("Loading price cache from file")
+                if self._verbose:
+                    print("Loading price cache from file")
                 for row in f.readlines():
                     id, value = row.split(';')
                     self._cached_data[id] = value
 
-        def _add_to_cache(self, cached_id: str, value: str):
+        def _add_to_cache(self, cached_id: str, value: Decimal):
             self._cached_data[cached_id] = value
             self.file_handler.write(f"{cached_id};{value}\n")
 
@@ -103,10 +105,12 @@ class BinanceAPI(APIBase):
             timestamp = str(int(date.timestamp() * 1000))
             cached_id = f"{symbol.symbol}_{timestamp}"
             if cached_id in self._cached_data:
-                print(f"Using cache: {cached_id}")
+                if self._verbose:
+                    print(f"Using cache: {cached_id}")
                 return Decimal(self._cached_data[cached_id])
             else:
-                print(f"Requesting price: {cached_id}")
+                if self._verbose:
+                    print(f"Requesting price: {cached_id}")
                 value = self._request_price(symbol.symbol, date)
                 self._add_to_cache(cached_id, value)
                 return Decimal(value)
@@ -122,7 +126,7 @@ class BinanceAPI(APIBase):
     class ConversionError(Exception):
         pass
 
-    def __init__(self, keys_path, cache_folder):
+    def __init__(self, keys_path, cache_folder, verbose: bool = False):
 
         keys = self._readKeys(keys_path)
 
@@ -137,7 +141,7 @@ class BinanceAPI(APIBase):
         self._pairs_priority = ('BTC', 'ETH', 'BNB', 'BUSD', 'USDT')
 
         self._cache_price_path = self._cache_folder_path / "price_history.txt"
-        self._price_history_db = self.PriceHistoryDatabase(self._cache_price_path, self._get_price)
+        self._price_history_db = self.PriceHistoryDatabase(self._cache_price_path, self._get_price, verbose)
 
         symbols_dataframe = self._check_pairs_cache(self._cache_pairs_path)
         self._build_pairs(symbols_dataframe)
@@ -171,6 +175,7 @@ class BinanceAPI(APIBase):
         coin = pair.first
         symbol = pair.symbol
         inv_symbol = pair.inv_symbol
+        # TODO crec que aixo es pot fer un refactor
         if force_search:
             return self._conversion_backtracking(coin, pair, date)
 
