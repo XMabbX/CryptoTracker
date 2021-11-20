@@ -16,14 +16,16 @@ SPOT_OPERATIONS = (Transaction.TransactionType.SAVING_REDEMPTION,
                    Transaction.TransactionType.SELL,
                    Transaction.TransactionType.SAVING_PURCHASE,
                    Transaction.TransactionType.POS_PURCHASE,
-                   Transaction.TransactionType.LIQUID_SWAP_ADD)
+                   Transaction.TransactionType.LIQUID_SWAP_ADD,
+                   Transaction.TransactionType.LIQUID_SWAP_REDEMPTION)
 
 IN_SPOT_OPERATIONS = (Transaction.TransactionType.SAVING_REDEMPTION,
                       Transaction.TransactionType.SAVING_INTEREST,
                       Transaction.TransactionType.POS_REDEMPTION,
                       Transaction.TransactionType.POS_INTEREST,
                       Transaction.TransactionType.BUY,
-                      Transaction.TransactionType.DEPOSIT)
+                      Transaction.TransactionType.DEPOSIT,
+                      Transaction.TransactionType.LIQUID_SWAP_REDEMPTION)
 OUT_SPOT_OPERATIONS = (Transaction.TransactionType.FEE,
                        Transaction.TransactionType.SELL,
                        Transaction.TransactionType.SAVING_PURCHASE,
@@ -32,7 +34,8 @@ OUT_SPOT_OPERATIONS = (Transaction.TransactionType.FEE,
 
 EARN_OPERATIONS = (Transaction.TransactionType.SAVING_PURCHASE, Transaction.TransactionType.POS_PURCHASE,
                    Transaction.TransactionType.LIQUID_SWAP_ADD,
-                   Transaction.TransactionType.SAVING_REDEMPTION, Transaction.TransactionType.POS_REDEMPTION)
+                   Transaction.TransactionType.SAVING_REDEMPTION, Transaction.TransactionType.POS_REDEMPTION,
+                   Transaction.TransactionType.LIQUID_SWAP_REDEMPTION)
 
 
 class _BuyTransaction:

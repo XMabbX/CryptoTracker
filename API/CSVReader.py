@@ -94,5 +94,7 @@ class BinanceCSVReader:
             return ProtoTransaction.TransactionType.POS_REDEMPTION
         elif transaction_name == 'Liquid Swap add/sell':
             return ProtoTransaction.TransactionType.LIQUID_SWAP_ADD
+        elif transaction_name == 'Liquid Swap rewards':
+            return ProtoTransaction.TransactionType.LIQUID_SWAP_REDEMPTION
         else:
             raise ValueError(f"Operation name not found: {transaction_name}")
