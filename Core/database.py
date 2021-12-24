@@ -500,6 +500,9 @@ class DataBaseAPI:
             pass
 
     def get_coin_list(self) -> List[str]:
+        return list(x for x in self._database.holdings.keys() if x not in ('EUR', 'BUSD', 'USDT'))
+
+    def get_coin_list_with_fiat(self):
         return list(self._database.holdings.keys())
 
     def get_coin(self, coin_name: str) -> Coin:
@@ -551,11 +554,15 @@ class DataBaseAPI:
             for process in self.active_processes:
                 process(coin_data)
 
-    def process_all_coins_data(self):
+    def process_all_coins_data(self, update_status_callback: callable = None):
         coins_list = list(self._database.holdings.keys())
         number_of_coins = len(coins_list)
         for i, coin_tick in enumerate(coins_list):
-            print(f"Processing coin {coin_tick}, {i}/{number_of_coins}")
+
+            status_message = f"Processing coin {coin_tick}, {i}/{number_of_coins}"
+            if update_status_callback is not None:
+                update_status_callback(status_message)
+            print(status_message)
             if coin_tick in ('EUR', 'BUSD', 'USDT'):
                 continue
             self.process_coin_data(coin_tick)

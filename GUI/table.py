@@ -10,8 +10,11 @@ class RowItem(list):
         super(RowItem, self).__init__(*args, **kwargs)
         self._dataclass_type = dataclass_type
 
-    def _format_decimal(self, value, fiat):
-        return f"{value:.12g} {fiat}"
+    def _format_decimal(self, value, fiat=None):
+        if fiat:
+            return f"{value:.12g} {fiat}"
+        else:
+            return f"{value:.12g}"
 
     def get_columns_names(self):
         raise NotImplementedError
