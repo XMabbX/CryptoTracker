@@ -30,7 +30,7 @@ class BinanceCSVReader:
         data = pd.read_csv(file, infer_datetime_format=True, parse_dates=['UTC_Time'], dtype={'Change': str})
         print(f"Finished read file")
         transactions_list = cls._parse_data(data)
-        print(f"Finished parsing data")
+        print(f"Finished parsing data - from: {data['UTC_Time'][0]} to {data['UTC_Time'][data.index[-1]]}")
 
         return transactions_list
 
