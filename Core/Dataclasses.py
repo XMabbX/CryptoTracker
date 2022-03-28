@@ -136,8 +136,8 @@ class CoinData:
         print(f"Current earn value: {self.coin_earn.current_value}")
         print(f"Total realized gains from earn coins: {self.coin_earn.realized_gains}")
         print(f"Current average cost: {self.current_average_cost}")
-        print(
-            f"Change respect average cost: {((self.current_value_per_unit - self.current_average_cost) / self.current_average_cost):.2%}")
+        average_cost_ = ((self.current_value_per_unit - self.current_average_cost) / self.current_average_cost)
+        print(f"Change respect average cost: {average_cost_:.2%}")
 
         print(f"Buy transactions cost and gains")
         for buy_trans in self.buy_transactions_data:

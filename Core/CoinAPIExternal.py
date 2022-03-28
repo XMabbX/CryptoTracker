@@ -282,5 +282,10 @@ class BinanceAPI(APIBase):
         return {'api_key': api_key,
                 'api_secret': api_secret}
 
+    # TODO Collect all Liquidity pools list and save to file? I don't think is necessary weigth = 1
+    # TODO Collect Get Liquidity operation record
+    # TODO Get user active liquidity pools and info
+    # TODO Create Liquidity Pool object in database to hold the user data and earn, and separate from regular earn
+
     # def getCoinInfo(self, coin_name):
     #     return self._client.get_symbol_info(coin_name)

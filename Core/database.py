@@ -500,7 +500,7 @@ class DataBaseAPI:
             pass
 
     def get_coin_list(self) -> List[str]:
-        return list(x for x in self._database.holdings.keys() if x not in ('EUR', 'BUSD', 'USDT'))
+        return list(x for x in self._database.holdings.keys() if x not in ('EUR',))
 
     def get_coin_list_with_fiat(self):
         return list(self._database.holdings.keys())
@@ -563,7 +563,7 @@ class DataBaseAPI:
             if update_status_callback is not None:
                 update_status_callback(status_message)
             print(status_message)
-            if coin_tick in ('EUR', 'BUSD', 'USDT'):
+            if coin_tick in ('EUR',):
                 continue
             self.process_coin_data(coin_tick)
 
